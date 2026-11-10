@@ -8,7 +8,7 @@ Este documento consolida la inspección técnica realizada sobre el equipo anfit
 
 | Parámetro | Valor Detectado | Estado / Evaluación |
 |---|---|---|
-| **Sistema Operativo** | macOS Sequoia (Version 26.6.2, Darwin Kernel 25.6.0) | Soportado para desarrollo Cloud-native |
+| **Sistema Operativo** | macOS 26.6.2 (Darwin Kernel 25.6.0, Build 25G83) | Soportado para desarrollo Cloud-native (sin codename arbitrario) |
 | **Arquitectura** | `arm64` (Apple Silicon) | Compatible con contenedores multi-arch |
 | **Procesador (CPU)** | Apple M4 Pro (14 núcleos: físicos y lógicos) | **Excelente capacidad** de cómputo paralelo |
 | **Memoria RAM** | 25.769.803.776 bytes (~24 GB LPDDR5) | **Suficiente** para cluster K8s completo (~12 GB requeridos) |

@@ -1,6 +1,6 @@
 # Plan de Trabajo y Distribución por Integrantes — MiniMarket Cloud
 
-Este documento establece la distribución equitativa de responsabilidades técnicas, propiedad de archivos y orden de integración para los cuatro integrantes del equipo en cumplimiento del proyecto de Servicios Cloud.
+Este documento establece la distribución equitativa de responsabilidades técnicas, propiedad de archivos y orden de integración para los cuatro integrantes del equipo en cumplimiento del proyecto de Servicios Cloud (UTP).
 
 ---
 
@@ -8,111 +8,105 @@ Este documento establece la distribución equitativa de responsabilidades técni
 
 ```mermaid
 flowchart LR
-    I1["Integrante 1\nInfraestructura & Redes"] -->|Prepara Cluster & Helm| I2["Integrante 2\nDesarrollo & Microservicios"]
-    I1 -->|Prepara Persistencia & Redes| I3["Integrante 3\nDatos & Spark"]
-    I2 -->|Expone Métricas & Endpoints| I4["Integrante 4\nObservabilidad & Caos"]
+    I1["Integrante 1\nInfraestructura & Despliegue"] -->|Prepara Docker Compose & K8s| I2["Integrante 2\nFrontend & ventas-api"]
+    I1 -->|Prepara Redes & Persistencia| I3["Integrante 3\nPostgreSQL & reportes-api"]
+    I2 -->|Expone Métricas & Endpoints| I4["Integrante 4\nObservabilidad & Pruebas"]
     I3 -->|Expone Métricas & Reportes| I4
 ```
 
 ---
 
-## 🛠️ Detalle de Roles y Responsabilidades
+## 🛠️ Detalle de Roles y Responsabilidades (Etapa 1 y Siguientes)
 
 ### Integrante 1: Especialista en Infraestructura, Virtualización y Despliegue
-- **Rol:** Diseñar la plataforma base, automatizar el aprovisionamiento de nodos, definir el empaquetado del cluster y blindar la seguridad de red.
+- **Rol:** Diseñar la plataforma base, orquestación local con Docker Compose, empaquetado de contenedores y posterior despliegue en Kubernetes.
 - **Ruta de Archivos Asignados:**
+  - `docker-compose.yml` (Entorno de desarrollo local unificado: frontend, ventas-api, reportes-api, postgres).
+  - `.env.example` y variables de entorno estándar.
   - `infra/multipass/cloud-init.yaml` (Aprovisionamiento automatizado de VM Ubuntu con cloud-init).
-  - `infra/multipass/setup-vm.sh` (Script de automatización de creación de VM).
-  - `infra/minikube/setup-minikube.sh` (Script de arranque reproducible de Minikube).
-  - `infra/k8s/namespaces/` (Definición de namespaces aislados).
-  - `infra/k8s/network-policies/` (Políticas de aislamiento L3/L4 entre frontend, backend y base de datos).
-  - `infra/helm/minimarket/` (Chart maestro: `Chart.yaml`, `values.yaml`, templates de Deployments, Services, ConfigMaps, Secrets y PVCs).
-- **Hitos de Entrega:**
-  1. VM Ubuntu aprovisionada con Cloud-init y Minikube operativo.
-  2. Chart de Helm modular verificado con `helm lint` y desplegable con un solo comando.
-  3. Políticas de red validadas mediante pruebas de conectividad denegada y permitida.
+  - `infra/minikube/setup-minikube.sh` (Scripts de inicialización del cluster K8s).
+  - `infra/k8s/namespaces/` y `infra/k8s/network-policies/` (Segmentación L3/L4).
+  - `infra/helm/minimarket/` (Chart maestro para empaquetado en Kubernetes).
+- **Entregables de la Etapa 1:**
+  1. `docker-compose.yml` con aislamiento de redes y volumen persistente para PostgreSQL.
+  2. Puertos de desarrollo mapeados sin colisionar con servicios preexistentes del host.
+  3. Archivos `.env.example` estructurados sin secretos sensibles.
 
 ---
 
-### Integrante 2: Desarrollador Fullstack, Lógica de Negocio y Resiliencia
-- **Rol:** Construir la interfaz de usuario, desarrollar la API transaccional de ventas con control estricto de concurrencia e instrumentar la aplicación para escalamiento.
+### Integrante 2: Desarrollador Fullstack, Lógica de Negocio e Instrumentación
+- **Rol:** Construir la interfaz de usuario en Vanilla JS, la API transaccional de ventas con control estricto de concurrencia e instrumentación de métricas.
 - **Ruta de Archivos Asignados:**
-  - `src/frontend/index.html` (Estructura de la SPA: catálogo, carrito y panel de reportes).
-  - `src/frontend/css/style.css` (Diseño limpio, responsivo y moderno tipo POS).
-  - `src/frontend/js/app.js` (Lógica cliente, peticiones asíncronas REST, manejo de estados).
+  - `src/frontend/index.html` (SPA: Inicio, Productos, Nueva Venta, Inventario, Reportes).
+  - `src/frontend/css/style.css` (Diseño limpio, sobrio, moderno tipo POS, fondo claro y verde de éxito).
+  - `src/frontend/js/app.js` (Lógica cliente, validaciones, Fetch API, estado de carga y modales).
   - `src/frontend/Dockerfile` y `src/frontend/nginx.conf`.
-  - `src/ventas-api/app/main.py` (FastAPI app con endpoints de productos y ventas).
-  - `src/ventas-api/app/models.py` (Esquemas Pydantic para requests y responses).
-  - `src/ventas-api/app/database.py` (Lógica transaccional ACID y descuento atómico de stock).
+  - `src/ventas-api/app/main.py` (FastAPI app con endpoints `/api/v1/productos`, `/api/v1/ventas`, `/api/v1/inventario`).
+  - `src/ventas-api/app/models.py` (Modelos SQLAlchemy: `Product`, `Sale`, `SaleItem`).
+  - `src/ventas-api/app/schemas.py` (Esquemas Pydantic para validación y serialización).
+  - `src/ventas-api/app/database.py` (Motor SQLAlchemy, sesiones y lógica transaccional).
   - `src/ventas-api/Dockerfile` y `src/ventas-api/requirements.txt`.
-  - `infra/k8s/hpa/ventas-api-hpa.yaml` (Definición del recurso Horizontal Pod Autoscaler).
-- **Hitos de Entrega:**
-  1. Microservicio `ventas-api` funcional con prueba de descuento atómico y rollback por falta de stock.
-  2. Frontend SPA integrado consumiendo el catálogo en tiempo real y enviando pedidos multi-ítem.
-  3. Endpoint `/metrics` instrumentado y HPA probado con escalamiento automático.
+  - `infra/k8s/hpa/ventas-api-hpa.yaml` (Manifiesto de autoescalado HPA).
+- **Entregables de la Etapa 1:**
+  1. CRUD de productos con validaciones (precio > 0, stock >= 0, nombre obligatorio).
+  2. Registro de venta atómico en PostgreSQL con bloqueo de fila (`with_for_update()`) para evitar sobreventa concurrente.
+  3. Rollback inmediato si algún ítem no dispone de stock suficiente (conservando inventario intacto).
+  4. Endpoints `/health`, `/ready` y `/metrics`.
+  5. SPA completa con 5 vistas funcionales y manejo de errores.
 
 ---
 
-### Integrante 3: Ingeniero de Datos, Persistencia y Computación Distribuida
-- **Rol:** Gestionar el almacenamiento relacional transaccional, modelar los datos y construir los flujos de analítica distribuida con Apache Spark.
+### Integrante 3: Ingeniero de Datos, Persistencia y Analítica
+- **Rol:** Modelar y versionar el almacenamiento relacional, inicializar datos semilla de bodega y construir la API de reportes analíticos.
 - **Ruta de Archivos Asignados:**
-  - `src/ventas-api/app/db_schema.sql` (DDL de tablas: `productos`, `ventas`, `detalle_ventas` e índices).
-  - `infra/k8s/postgres/` o plantillas Helm correspondientes al `StatefulSet` y `PVC` de PostgreSQL.
-  - `src/spark/jobs/reporte_diario.py` (Job PySpark de consolidación de ventas diarias e ingresos).
-  - `src/spark/jobs/productos_top.py` (Job PySpark para ranking de productos con mayor volumen).
-  - `src/reportes-api/app/main.py` (FastAPI app que expone los endpoints de reportes analíticos).
-  - `src/reportes-api/app/spark_jobs.py` (Ejecutor / despachador de jobs Spark).
+  - `src/ventas-api/alembic/` (Migraciones versionadas con Alembic para PostgreSQL).
+  - `src/ventas-api/app/seed.py` (Carga idempotente de productos peruanos: arroz, azúcar, leche Gloria, Inka Kola, galletas, etc.).
+  - `src/reportes-api/app/main.py` (FastAPI app para reportes: ventas hoy, top productos, ventas por día).
+  - `src/reportes-api/app/database.py` y `src/reportes-api/app/schemas.py`.
   - `src/reportes-api/Dockerfile` y `src/reportes-api/requirements.txt`.
-- **Hitos de Entrega:**
-  1. Base de datos PostgreSQL inicializada con datos semilla de productos y volumen persistente.
-  2. Scripts de PySpark ejecutando agregaciones analíticas mediante lectura JDBC.
-  3. API de reportes (`reportes-api`) sirviendo las consultas procesadas por Spark.
+  - `src/spark/jobs/` (Jobs analíticos PySpark para etapas posteriores).
+- **Entregables de la Etapa 1:**
+  1. Migraciones Alembic aplicadas generando las tablas `products`, `sales`, `sale_items`.
+  2. Script de seed idempotente con productos de prueba de bodega peruana.
+  3. `reportes-api` independiente respondiendo a los contratos de reporte con consultas SQL optimizadas.
+  4. Endpoints `/health`, `/ready` y `/metrics` en `reportes-api`.
 
 ---
 
-### Integrante 4: Ingeniero de Observabilidad, Service Mesh y Sustentación Técnica
-- **Rol:** Implementar el control de tráfico inteligente con Istio, las pruebas de inyección de fallos con Chaos Mesh, el monitoreo con Grafana y el modelo de dimensionamiento TCO.
+### Integrante 4: Ingeniero de Observabilidad, Calidad y Sustentación
+- **Rol:** Garantizar la calidad de software mediante pruebas automatizadas (pytest), configurar la telemetría y preparar la sustentación técnica.
 - **Ruta de Archivos Asignados:**
-  - `observability/istio/gateway.yaml` (Istio Ingress Gateway para enrutamiento único).
-  - `observability/istio/virtual-service.yaml` (Reglas de ruteo L7 y mTLS).
-  - `observability/prometheus-grafana/servicemonitors.yaml` (Reglas de scrapeo de métricas).
-  - `observability/prometheus-grafana/dashboard-minimarket.json` (Tablero preconfigurado de Grafana).
-  - `observability/chaos-mesh/pod-failure.yaml` y `latency-injection.yaml` (Experimentos de caos).
-  - `tests/load/hey-test.sh` (Script automatizado de pruebas de carga con la herramienta `hey`).
-  - `infra/tco/dimensionamiento_tco.sh` (Script interactivo en Bash de cálculo térmico, BTU y TCO a 3 años).
-- **Hitos de Entrega:**
-  1. Istio Service Mesh operativo con mTLS y enrutamiento verificado.
-  2. Dashboard de Grafana reflejando métricas HTTP en vivo y salud de los pods.
-  3. Escenario de resiliencia demostrado: inyección de fallos con Chaos Mesh bajo estrés de `hey` con HPA activo.
-  4. Script de TCO ejecutado en vivo durante la defensa del proyecto.
+  - `tests/test_products.py` (Pruebas unitarias y de integración de productos y validaciones).
+  - `tests/test_sales.py` (Pruebas de atomicidad, rollback, stock insuficiente y concurrencia).
+  - `tests/test_reports.py` (Pruebas de endpoints analíticos y resúmenes).
+  - `tests/test_health_metrics.py` (Pruebas de `/health`, `/ready` y `/metrics`).
+  - `observability/istio/` y `observability/chaos-mesh/` (Para etapas posteriores).
+  - `infra/tco/dimensionamiento_tco.sh` (Script de cálculo térmico, potencia y TCO).
+- **Entregables de la Etapa 1:**
+  1. Suite completa de 10 pruebas automatizadas en `pytest` pasando satisfactoriamente.
+  2. Cobertura de casos límite: sobreventa, precio cero/negativo, transacción fallida y rollback.
+  3. Verificación de exposición de métricas Prometheus en formato OpenMetrics.
 
 ---
 
-## 🔄 Matriz de Dependencias y Orden de Integración
+## 🔄 Matriz de Dependencias y Orden de Ejecución
 
 ```text
-Fase 1: Preparación del Entorno
-├── Integrante 1: Valida Minikube y define los namespaces y políticas de red iniciales.
-└── Integrante 3: Configura el schema DDL y el contenedor de PostgreSQL con persistencia.
+Paso 1 (Integrante 1 & 3):
+  └── Configuración de Base de Datos PostgreSQL, variables de entorno y migraciones Alembic.
+  └── Ejecución del seed de datos de demostración de bodega.
 
-Fase 2: Core Transaccional
-├── Integrante 2: Desarrolla ventas-api y prueba localmente contra PostgreSQL.
-└── Integrante 2: Construye la SPA frontend básica con formulario de venta y visualización de stock.
+Paso 2 (Integrante 2):
+  └── Implementación de ventas-api (modelos, esquemas, transacciones ACID con SELECT FOR UPDATE).
+  └── Desarrollo del Frontend SPA (5 vistas, interfaz POS, Fetch API).
 
-Fase 3: Computación Distribuida
-└── Integrante 3: Desarrolla y ejecuta los jobs de PySpark leyendo ventas de prueba desde PostgreSQL.
-└── Integrante 3: Implementa reportes-api y la conecta con la SPA del Integrante 2.
+Paso 3 (Integrante 3):
+  └── Implementación de reportes-api (consultas SQL de agregación y endpoints REST).
 
-Fase 4: Empaquetado y Orquestación K8s
-└── Integrante 1: Integra todos los Dockerfiles y construye el Chart de Helm unificado.
-└── Integrante 1: Realiza el despliegue general en Minikube bajo las NetworkPolicies.
+Paso 4 (Integrante 4):
+  └── Ejecución de la suite completa de pruebas pytest (10 escenarios obligatorios).
+  └── Verificación de métricas Prometheus y salud de los servicios.
 
-Fase 5: Malla, Observabilidad y Resiliencia
-├── Integrante 4: Inyecta el sidecar de Istio en los pods y valida el Gateway.
-├── Integrante 4: Despliega kube-prometheus-stack y conecta el dashboard de Grafana.
-├── Integrante 2 & 4: Configuran y calibran el HPA con Metrics Server.
-└── Integrante 4: Ejecuta pruebas de estrés con hey e inyecta caos con Chaos Mesh.
-
-Fase 6: Sustentación y Validación Final
-└── Todos los integrantes: Ensayo conjunto de defensa con el script de TCO y checklist de rúbrica.
+Paso 5 (Integrante 1 & Equipo):
+  └── Verificación del entorno unificado con Docker Compose.
 ```

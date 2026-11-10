@@ -1,0 +1,82 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: minimarket_postgres
+    environment:
+      POSTGRES_USER: minimarket_user
+      POSTGRES_PASSWORD: minimarket_password
+      POSTGRES_DB: minimarket_db
+    ports:
+      # Mapeo a puerto host 5433 para prevenir colisiones con bases de datos preexistentes del host
+      - "5433:5432"
+    volumes:
+      - minimarket_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U minimarket_user -d minimarket_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - minimarket-net
+    restart: unless-stopped
+
+  ventas-api:
+    build:
+      context: ./src/ventas-api
+      dockerfile: Dockerfile
+    container_name: minimarket_ventas_api
+    environment:
+      DATABASE_URL: postgresql://minimarket_user:minimarket_password@postgres:5432/minimarket_db
+      APP_PORT: 8000
+      LOW_STOCK_THRESHOLD: 5
+      CORS_ORIGINS: "*"
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - minimarket-net
+    restart: unless-stopped
+
+  reportes-api:
+    build:
+      context: ./src/reportes-api
+      dockerfile: Dockerfile
+    container_name: minimarket_reportes_api
+    environment:
+      DATABASE_URL: postgresql://minimarket_user:minimarket_password@postgres:5432/minimarket_db
+      APP_PORT: 8001
+      CORS_ORIGINS: "*"
+    ports:
+      - "8001:8001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - minimarket-net
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./src/frontend
+      dockerfile: Dockerfile
+    container_name: minimarket_frontend
+    ports:
+      - "8080:80"
+    depends_on:
+      - ventas-api
+      - reportes-api
+    networks:
+      - minimarket-net
+    restart: unless-stopped
+
+volumes:
+  minimarket_postgres_data:
+    name: minimarket_postgres_data
+
+networks:
+  minimarket-net:
+    name: minimarket-net

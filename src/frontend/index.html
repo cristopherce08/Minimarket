@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MiniMarket Cloud — Sistema de Ventas e Inventario</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+  <!-- Navegación Superior -->
+  <header class="navbar">
+    <div class="nav-container">
+      <a href="#" class="brand" onclick="navigateTo('inicio'); return false;">
+        🏪 MiniMarket <span style="color:#0f172a;">Cloud</span>
+        <span class="tag">Bodega POS</span>
+      </a>
+
+      <nav>
+        <ul class="nav-links">
+          <li><button class="nav-btn active" id="nav-inicio" onclick="navigateTo('inicio')">🏠 Inicio</button></li>
+          <li><button class="nav-btn" id="nav-productos" onclick="navigateTo('productos')">📦 Productos</button></li>
+          <li><button class="nav-btn" id="nav-venta" onclick="navigateTo('venta')">🛒 Nueva Venta</button></li>
+          <li><button class="nav-btn" id="nav-inventario" onclick="navigateTo('inventario')">📊 Inventario</button></li>
+          <li><button class="nav-btn" id="nav-reportes" onclick="navigateTo('reportes')">📈 Reportes</button></li>
+        </ul>
+      </nav>
+
+      <div class="backend-status" id="backend-status-badge">
+        <span class="status-dot" id="status-dot"></span>
+        <span id="status-text">Conectando...</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- Contenedor de Vistas -->
+  <main class="main-content">
+
+    <!-- ==================== VISTA 1: INICIO ==================== -->
+    <section id="view-inicio" class="view-section active">
+      <div class="page-header">
+        <div>
+          <h1 class="page-title">Panel General de la Bodega</h1>
+          <p class="page-subtitle">Resumen ejecutivo del estado de ventas e inventario en tiempo real.</p>
+        </div>
+        <div>
+          <button class="btn btn-primary" onclick="navigateTo('venta')">🛒 Registrar Venta</button>
+        </div>
+      </div>
+
+      <div class="kpi-grid">
+        <div class="kpi-card">
+          <span class="kpi-label">Ventas Registradas Hoy</span>
+          <span class="kpi-value green" id="kpi-ventas-hoy">0</span>
+          <span class="kpi-footer">Operaciones finalizadas</span>
+        </div>
+        <div class="kpi-card">
+          <span class="kpi-label">Ingresos del Día</span>
+          <span class="kpi-value green" id="kpi-ingresos-hoy">S/. 0.00</span>
+          <span class="kpi-footer">Total cobrado en caja</span>
+        </div>
+        <div class="kpi-card">
+          <span class="kpi-label">Productos Activos</span>
+          <span class="kpi-value" id="kpi-total-productos">0</span>
+          <span class="kpi-footer">En catálogo general</span>
+        </div>
+        <div class="kpi-card">
+          <span class="kpi-label">Alertas de Stock</span>
+          <span class="kpi-value red" id="kpi-alertas-stock">0</span>
+          <span class="kpi-footer">Productos agotados o por agotarse</span>
+        </div>
+      </div>
+
+      <div class="table-card">
+        <div class="table-toolbar">
+          <h3 style="font-size:1.05rem; font-weight:600;">⚠️ Productos con Stock Crítico (Requieren Reposición)</h3>
+          <button class="btn btn-secondary btn-sm" onclick="loadDashboardData()">🔄 Actualizar</button>
+        </div>
+        <div class="table-responsive">
+          <table>
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Producto</th>
+                <th>Precio Unit.</th>
+                <th>Stock Actual</th>
+                <th>Estado</th>
+                <th>Acción</th>
+              </tr>
+            </thead>
+            <tbody id="tabla-alertas-inicio">
+              <tr><td colspan="6" class="empty-state">Cargando inventario...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== VISTA 2: PRODUCTOS ==================== -->
+    <section id="view-productos" class="view-section">
+      <div class="page-header">
+        <div>
+          <h1 class="page-title">Catálogo de Productos</h1>
+          <p class="page-subtitle">Gestión de precios, existencias y altas de nuevos artículos.</p>
+        </div>
+        <div>
+          <button class="btn btn-primary" onclick="openProductModal()">+ Nuevo Producto</button>
+        </div>
+      </div>
+
+      <div class="table-card">
+        <div class="table-toolbar">
+          <input type="text" id="filtro-productos" class="search-input" placeholder="🔍 Buscar producto por nombre..." oninput="filterProductsTable()">
+          <div style="display:flex; gap:0.5rem;">
+            <button class="btn btn-secondary btn-sm" id="btn-filtro-bajo-stock" onclick="toggleFiltroBajoStock()">⚠️ Ver Solo Stock Bajo</button>
+            <button class="btn btn-secondary btn-sm" onclick="loadProducts()">🔄 Refrescar</button>
+          </div>
+        </div>
+        <div class="table-responsive">
+          <table>
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Nombre del Producto</th>
+                <th>Precio (PEN)</th>
+                <th>Stock Disponible</th>
+                <th>Estado</th>
+                <th>Acciones</th>
+              </tr>
+            </thead>
+            <tbody id="tabla-productos-body">
+              <tr><td colspan="6" class="empty-state">Cargando catálogo...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== VISTA 3: NUEVA VENTA (POS) ==================== -->
+    <section id="view-venta" class="view-section">
+      <div class="page-header">
+        <div>
+          <h1 class="page-title">Punto de Venta (Terminal POS)</h1>
+          <p class="page-subtitle">Selecciona los productos solicitados y confirma la venta de manera atómica.</p>
+        </div>
+      </div>
+
+      <div class="pos-layout">
+        <!-- Catálogo interactivo de selección -->
+        <div class="catalog-card">
+          <div style="display:flex; justify-content:space-between; align-items:center; gap:0.5rem; flex-wrap:wrap;">
+            <h3 style="font-size:1.1rem; font-weight:700;">Catálogo Disponible</h3>
+            <input type="text" id="pos-search-input" class="search-input" placeholder="🔍 Buscar artículo..." oninput="filterPosCatalog()" style="min-width:200px;">
+          </div>
+          <div class="catalog-grid" id="pos-catalog-grid">
+            <div class="empty-state">Cargando productos disponibles...</div>
+          </div>
+        </div>
+
+        <!-- Panel del Carrito y Total -->
+        <div class="pos-cart-panel">
+          <div style="display:flex; justify-content:space-between; align-items:center;">
+            <h3 style="font-size:1.15rem; font-weight:700;">🛒 Carrito de Venta</h3>
+            <button class="btn btn-secondary btn-sm" onclick="clearCart()">Vaciar</button>
+          </div>
+
+          <div class="cart-items-list" id="cart-items-container">
+            <div class="empty-state" style="padding:2rem 0;">
+              <div class="empty-state-icon">🛒</div>
+              <p>El carrito está vacío.<br>Haz clic en los productos para agregarlos.</p>
+            </div>
+          </div>
+
+          <div class="cart-summary">
+            <div class="cart-total-row">
+              <span>Total a Pagar:</span>
+              <span style="color:var(--primary-green);" id="cart-total-amount">S/. 0.00</span>
+            </div>
+
+            <button class="btn btn-primary" id="btn-confirm-sale" onclick="submitSale()" style="width:100%; padding:0.85rem; font-size:1rem;">
+              ✅ Confirmar y Registrar Venta
+            </button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== VISTA 4: INVENTARIO ==================== -->
+    <section id="view-inventario" class="view-section">
+      <div class="page-header">
+        <div>
+          <h1 class="page-title">Control de Inventario</h1>
+          <p class="page-subtitle">Consulta directa del estado de existencias persistido en PostgreSQL.</p>
+        </div>
+        <button class="btn btn-secondary" onclick="loadInventoryView()">🔄 Refrescar Inventario</button>
+      </div>
+
+      <div class="kpi-grid">
+        <div class="kpi-card">
+          <span class="kpi-label">Unidades Totales en Stock</span>
+          <span class="kpi-value" id="inv-total-unidades">0</span>
+          <span class="kpi-footer">Artículos físicos en almacén</span>
+        </div>
+        <div class="kpi-card">
+          <span class="kpi-label">Productos Disponibles</span>
+          <span class="kpi-value green" id="inv-productos-disponibles">0</span>
+          <span class="kpi-footer">Con inventario saludable</span>
+        </div>
+        <div class="kpi-card">
+          <span class="kpi-label">Productos con Stock Bajo</span>
+          <span class="kpi-value amber" id="inv-stock-bajo">0</span>
+          <span class="kpi-footer">5 unidades o menos</span>
+        </div>
+        <div class="kpi-card">
+          <span class="kpi-label">Productos Agotados</span>
+          <span class="kpi-value red" id="inv-productos-agotados">0</span>
+          <span class="kpi-footer">Stock igual a 0</span>
+        </div>
+      </div>
+
+      <div class="table-card">
+        <div class="table-toolbar">
+          <div style="display:flex; gap:0.5rem; flex-wrap:wrap;">
+            <button class="btn btn-sm btn-primary" id="btn-inv-filter-all" onclick="filterInventory('all')">Todos</button>
+            <button class="btn btn-sm btn-secondary" id="btn-inv-filter-available" onclick="filterInventory('available')">Disponibles</button>
+            <button class="btn btn-sm btn-secondary" id="btn-inv-filter-low" onclick="filterInventory('low')">Stock Bajo</button>
+            <button class="btn btn-sm btn-secondary" id="btn-inv-filter-out" onclick="filterInventory('out')">Agotados</button>
+          </div>
+          <input type="text" id="filtro-inventario" class="search-input" placeholder="🔍 Filtrar inventario..." oninput="searchInventoryTable()">
+        </div>
+        <div class="table-responsive">
+          <table>
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Nombre del Producto</th>
+                <th>Precio Venta</th>
+                <th>Cantidad Actual</th>
+                <th>Estado</th>
+                <th>Acción Rápida</th>
+              </tr>
+            </thead>
+            <tbody id="tabla-inventario-body">
+              <tr><td colspan="6" class="empty-state">Cargando inventario...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== VISTA 5: REPORTES ==================== -->
+    <section id="view-reportes" class="view-section">
+      <div class="page-header">
+        <div>
+          <h1 class="page-title">Reportes y Estadísticas de Ventas</h1>
+          <p class="page-subtitle">Métricas analíticas consolidadas de la bodega.</p>
+        </div>
+        <button class="btn btn-secondary" onclick="loadReportsView()">🔄 Actualizar Reportes</button>
+      </div>
+
+      <div class="kpi-grid">
+        <div class="kpi-card">
+          <span class="kpi-label">Ingresos Totales Hoy</span>
+          <span class="kpi-value green" id="rep-ingresos-hoy">S/. 0.00</span>
+          <span class="kpi-footer" id="rep-ventas-hoy-count">0 ventas realizadas</span>
+        </div>
+        <div class="kpi-card">
+          <span class="kpi-label">Ticket Promedio del Día</span>
+          <span class="kpi-value" id="rep-ticket-promedio">S/. 0.00</span>
+          <span class="kpi-footer">Por cada cliente</span>
+        </div>
+        <div class="kpi-card">
+          <span class="kpi-label">Ventas Históricas Totales</span>
+          <span class="kpi-value" id="rep-ventas-historicas">0</span>
+          <span class="kpi-footer" id="rep-ingresos-historicos">Total: S/. 0.00</span>
+        </div>
+      </div>
+
+      <div style="display:grid; grid-template-columns: 1fr 1fr; gap:1.5rem; margin-top:1.5rem;" class="pos-layout">
+        <!-- Ranking Top Productos -->
+        <div class="table-card">
+          <div class="table-toolbar">
+            <h3 style="font-size:1.05rem; font-weight:700;">🏆 Productos Más Vendidos</h3>
+          </div>
+          <div class="table-responsive">
+            <table>
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>Producto</th>
+                  <th>Uds. Vendidas</th>
+                  <th>Recaudación</th>
+                </tr>
+              </thead>
+              <tbody id="tabla-top-productos">
+                <tr><td colspan="4" class="empty-state">Cargando ranking...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Ventas Agrupadas por Día -->
+        <div class="table-card">
+          <div class="table-toolbar">
+            <h3 style="font-size:1.05rem; font-weight:700;">📅 Ventas de los Últimos Días</h3>
+          </div>
+          <div class="table-responsive">
+            <table>
+              <thead>
+                <tr>
+                  <th>Fecha</th>
+                  <th>N° Transacciones</th>
+                  <th>Total Ingresos</th>
+                </tr>
+              </thead>
+              <tbody id="tabla-ventas-dias">
+                <tr><td colspan="3" class="empty-state">Cargando histórico...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- ==================== MODAL: CREAR / EDITAR PRODUCTO ==================== -->
+  <div class="modal-backdrop" id="modal-producto">
+    <div class="modal-box">
+      <div class="modal-header">
+        <h3 class="modal-title" id="modal-producto-title">Registrar Nuevo Producto</h3>
+        <button class="btn btn-secondary btn-sm" onclick="closeProductModal()">✕</button>
+      </div>
+      <form id="form-producto" onsubmit="saveProduct(event)">
+        <div class="modal-body">
+          <input type="hidden" id="prod-id">
+          
+          <div class="form-group">
+            <label class="form-label" for="prod-nombre">Nombre del Producto *</label>
+            <input type="text" id="prod-nombre" class="form-input" placeholder="Ej: Arroz Costeño 1kg" required minlength="2" maxlength="150">
+            <p class="form-help">Ingresa el nombre comercial claro del artículo.</p>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="prod-precio">Precio Unitario en Soles (PEN) *</label>
+            <input type="number" id="prod-precio" class="form-input" placeholder="0.00" step="0.01" min="0.01" required>
+            <p class="form-help">Debe ser un valor positivo mayor a cero.</p>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="prod-stock">Stock Inicial / Existencias *</label>
+            <input type="number" id="prod-stock" class="form-input" placeholder="0" step="1" min="0" required>
+            <p class="form-help">Cantidad no negativa de unidades disponibles.</p>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" onclick="closeProductModal()">Cancelar</button>
+          <button type="submit" class="btn btn-primary" id="btn-save-product">Guardar Producto</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ==================== MODAL: TICKET DE VENTA CONFIRMADA ==================== -->
+  <div class="modal-backdrop" id="modal-ticket">
+    <div class="modal-box" style="max-width:440px;">
+      <div class="modal-header" style="background-color:var(--primary-green-light);">
+        <h3 class="modal-title" style="color:var(--primary-green-text);">✅ Venta Registrada con Éxito</h3>
+        <button class="btn btn-secondary btn-sm" onclick="closeTicketModal()">✕</button>
+      </div>
+      <div class="modal-body" id="ticket-modal-body">
+        <!-- Renderizado dinámico del ticket -->
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-primary" onclick="closeTicketModal()">Entendido</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Contenedor Toast para Notificaciones -->
+  <div class="toast-container" id="toast-container"></div>
+
+  <script src="js/app.js"></script>
+</body>
+</html>

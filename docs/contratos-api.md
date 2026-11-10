@@ -1,39 +1,48 @@
 # Contratos de API y Especificación de Datos — MiniMarket Cloud
 
-Este documento define de manera estricta los esquemas de datos, endpoints REST, códigos de estado HTTP y contratos JSON utilizados para la comunicación entre el **Frontend**, el microservicio **`ventas-api`** y el microservicio **`reportes-api`**.
+Este documento define la especificación técnica de esquemas de base de datos, endpoints REST, códigos de estado HTTP y contratos JSON entre el **Frontend**, el microservicio **`ventas-api`** (puerto `8000`) y el microservicio **`reportes-api`** (puerto `8001`).
 
 ---
 
-## 1. Modelo de Datos Relacional (PostgreSQL)
+## 1. Esquema Relacional de Base de Datos (PostgreSQL 16)
 
 ```mermaid
 erDiagram
-    PRODUCTOS ||--o{ DETALLE_VENTAS : "es vendido en"
-    VENTAS ||--|{ DETALLE_VENTAS : "contiene"
+    products ||--o{ sale_items : "se incluye en"
+    sales ||--|{ sale_items : "contiene"
 
-    PRODUCTOS {
+    products {
         int id PK
-        string nombre
-        decimal precio
+        varchar(150) name
+        numeric(10,2) price
         int stock
         timestamp created_at
     }
 
-    VENTAS {
+    sales {
         int id PK
-        decimal total
-        timestamp fecha
+        numeric(10,2) total
+        timestamp created_at
     }
 
-    DETALLE_VENTAS {
+    sale_items {
         int id PK
-        int venta_id FK
-        int producto_id FK
-        int cantidad
-        decimal precio_unitario
-        decimal subtotal
+        int sale_id FK
+        int product_id FK
+        int quantity
+        numeric(10,2) unit_price
+        numeric(10,2) subtotal
     }
 ```
+
+### Reglas de Integridad y Restricciones
+- `products.price`: `CHECK (price > 0)`
+- `products.stock`: `CHECK (stock >= 0)`
+- `sale_items.quantity`: `CHECK (quantity > 0)`
+- `sale_items.unit_price`: `CHECK (unit_price > 0)` (Precio histórico congelado en el momento exacto de la venta)
+- `sales.total`: `CHECK (total >= 0)`
+- `sale_items.sale_id`: `FOREIGN KEY REFERENCES sales(id) ON DELETE CASCADE`
+- `sale_items.product_id`: `FOREIGN KEY REFERENCES products(id)`
 
 ---
 
@@ -41,92 +50,139 @@ erDiagram
 
 Prefijo base: `/api/v1`
 
-### 2.1. Endpoints de Salud y Métricas
+### 2.1. Endpoints de Diagnóstico y Métricas
 
 - **`GET /health`**
-  - **Propósito:** Liveness y readiness probes de Kubernetes.
-  - **Respuesta:** `200 OK`
+  - **Propósito:** Liveness probe de Kubernetes.
+  - **Respuesta (`200 OK`):**
     ```json
     {
-      "status": "ok",
+      "status": "healthy",
       "service": "ventas-api",
-      "database": "connected"
+      "timestamp": "2026-11-10T05:30:00Z"
     }
     ```
+
+- **`GET /ready`**
+  - **Propósito:** Readiness probe de Kubernetes (valida conectividad con PostgreSQL).
+  - **Respuesta (`200 OK`):**
+    ```json
+    {
+      "status": "ready",
+      "database": "connected",
+      "latency_ms": 1.25
+    }
+    ```
+  - **Respuesta (`503 Service Unavailable`):**
+    ```json
+    {
+      "status": "unhealthy",
+      "database": "disconnected",
+      "error": "Error de conexión a PostgreSQL"
+    }
+    ```
+
 - **`GET /metrics`**
-  - **Propósito:** Scrapeo para Prometheus (`prometheus-fastapi-instrumentator`).
-  - **Formato:** Texto plano con métricas estándar de Prometheus.
+  - **Propósito:** Scrapeo Prometheus (`prometheus-client`).
+  - **Formato:** Texto plano `text/plain` estándar OpenMetrics.
 
 ---
 
-### 2.2. Endpoints de Catálogo de Productos
+### 2.2. Endpoints del Módulo de Productos
 
 #### `GET /api/v1/productos`
-- **Descripción:** Retorna el catálogo completo de productos con su stock actual.
-- **Respuesta Exitosa (`200 OK`):**
+- **Query Params:**
+  - `buscar` (string opcional)
+  - `solo_bajo_stock` (bool opcional, default: `false`)
+- **Respuesta (`200 OK`):**
 ```json
 [
   {
     "id": 1,
-    "nombre": "Arroz Costeño 1kg",
-    "precio": 4.50,
+    "name": "Arroz Costeño 1kg",
+    "price": 4.50,
     "stock": 50,
-    "created_at": "2026-11-10T08:30:00Z"
+    "is_low_stock": false,
+    "created_at": "2026-11-10T00:00:00Z"
   },
   {
     "id": 2,
-    "nombre": "Aceite Primor 1L",
-    "precio": 9.20,
-    "stock": 30,
-    "created_at": "2026-11-10T08:30:00Z"
+    "name": "Aceite Primor 1L",
+    "price": 9.20,
+    "stock": 3,
+    "is_low_stock": true,
+    "created_at": "2026-11-10T00:00:00Z"
   }
 ]
 ```
 
 #### `POST /api/v1/productos`
-- **Descripción:** Crea un nuevo producto en el catálogo.
 - **Payload (`application/json`):**
 ```json
 {
-  "nombre": "Leche Gloria Azul 400g",
-  "precio": 4.20,
+  "name": "Leche Gloria Azul 400g",
+  "price": 4.20,
   "stock": 100
 }
 ```
-- **Respuesta Exitosa (`201 Created`):**
+- **Validaciones:**
+  - `name`: No vacío, longitud entre 2 y 150 caracteres.
+  - `price`: Número decimal mayor que cero.
+  - `stock`: Entero mayor o igual a cero.
+- **Respuesta (`201 Created`):**
 ```json
 {
   "id": 3,
-  "nombre": "Leche Gloria Azul 400g",
-  "precio": 4.20,
+  "name": "Leche Gloria Azul 400g",
+  "price": 4.20,
   "stock": 100,
-  "created_at": "2026-11-10T09:00:00Z"
+  "is_low_stock": false,
+  "created_at": "2026-11-10T05:32:00Z"
 }
 ```
-- **Respuesta de Error de Validación (`422 Unprocessable Entity`):**
+
+#### `GET /api/v1/productos/{id}`
+- **Respuesta (`200 OK`):** Objeto producto individual.
+- **Respuesta (`404 Not Found`):**
 ```json
 {
-  "detail": "El precio y el stock deben ser valores positivos mayores a cero."
+  "detail": "Producto con ID 99 no encontrado."
 }
 ```
+
+#### `PUT /api/v1/productos/{id}`
+- **Payload (`application/json`):**
+```json
+{
+  "name": "Leche Gloria Azul 400g (Lata)",
+  "price": 4.50,
+  "stock": 95
+}
+```
+- **Respuesta (`200 OK`):** Objeto producto actualizado.
+
+#### `GET /api/v1/productos/alertas/bajo-stock`
+- **Query Params:**
+  - `threshold` (int opcional, default: `5`)
+- **Respuesta (`200 OK`):** Lista de productos con stock menor o igual al umbral.
 
 ---
 
-### 2.3. Endpoints de Registro Transaccional de Ventas
+### 2.3. Endpoints del Módulo de Ventas
 
 #### `POST /api/v1/ventas`
-- **Descripción:** Registra una venta con múltiples productos. Ejecuta una transacción atómica: valida existencia, verifica que haya stock suficiente para cada ítem, descuenta el stock inmediatamente y registra la cabecera y el detalle. Si cualquier ítem no tiene stock suficiente, la transacción se revierte (`ROLLBACK`).
+- **Descripción:** Registro atómico de venta multi-producto. Bloquea filas en PostgreSQL con `with_for_update()`, valida stock disponible de todos los ítems, descuenta el inventario y genera la venta con su detalle. Si falla cualquier producto por stock insuficiente, se cancela toda la venta mediante `ROLLBACK`.
 - **Payload (`application/json`):**
 ```json
 {
   "items": [
     {
-      "producto_id": 1,
-      "cantidad": 2
+      "product_id": 1,
+      "quantity": 2
     },
     {
-      "producto_id": 2,
-      "cantidad": 1
+      "product_id": 2,
+      "quantity": 1
     }
   ]
 }
@@ -134,54 +190,64 @@ Prefijo base: `/api/v1`
 - **Respuesta Exitosa (`201 Created`):**
 ```json
 {
-  "id": 101,
+  "id": 1,
   "total": 18.20,
-  "fecha": "2026-11-10T10:15:30Z",
+  "created_at": "2026-11-10T05:35:00Z",
   "items": [
     {
-      "producto_id": 1,
-      "nombre": "Arroz Costeño 1kg",
-      "cantidad": 2,
-      "precio_unitario": 4.50,
+      "id": 1,
+      "product_id": 1,
+      "product_name": "Arroz Costeño 1kg",
+      "quantity": 2,
+      "unit_price": 4.50,
       "subtotal": 9.00
     },
     {
-      "producto_id": 2,
-      "nombre": "Aceite Primor 1L",
-      "cantidad": 1,
-      "precio_unitario": 9.20,
+      "id": 2,
+      "product_id": 2,
+      "product_name": "Aceite Primor 1L",
+      "quantity": 1,
+      "unit_price": 9.20,
       "subtotal": 9.20
     }
   ]
 }
 ```
-- **Respuesta de Error por Stock Insuficiente (`400 Bad Request`):**
+- **Error por Stock Insuficiente (`400 Bad Request`):**
 ```json
 {
   "error": "STOCK_INSUFICIENTE",
-  "mensaje": "Stock insuficiente para el producto 'Aceite Primor 1L'. Stock actual: 2, solicitado: 5."
-}
-```
-- **Respuesta de Error por Producto Inexistente (`404 Not Found`):**
-```json
-{
-  "error": "PRODUCTO_NO_ENCONTRADO",
-  "mensaje": "El producto con ID 99 no existe en el catálogo."
+  "detail": "Stock insuficiente para 'Aceite Primor 1L'. Disponible: 3, Solicitado: 5."
 }
 ```
 
 #### `GET /api/v1/ventas`
-- **Descripción:** Lista el historial reciente de ventas registradas.
-- **Respuesta Exitosa (`200 OK`):**
+- **Query Params:** `limit` (default: 50), `offset` (default: 0)
+- **Respuesta (`200 OK`):** Lista de ventas con resumen de total y fecha.
+
+#### `GET /api/v1/ventas/{id}`
+- **Respuesta (`200 OK`):** Detalle completo de la venta y sus ítems.
+
+---
+
+### 2.4. Endpoints del Módulo de Inventario
+
+#### `GET /api/v1/inventario/resumen`
+- **Descripción:** Consulta agregada directa de PostgreSQL sobre el estado del inventario.
+- **Respuesta (`200 OK`):**
 ```json
-[
-  {
-    "id": 101,
-    "total": 18.20,
-    "fecha": "2026-11-10T10:15:30Z",
-    "total_items": 2
-  }
-]
+{
+  "total_productos": 15,
+  "total_unidades_en_stock": 420,
+  "productos_agotados": 2,
+  "productos_stock_bajo": 4,
+  "items_agotados": [
+    {"id": 5, "name": "Galletas Soda San Jorge", "stock": 0}
+  ],
+  "items_stock_bajo": [
+    {"id": 2, "name": "Aceite Primor 1L", "stock": 3}
+  ]
+}
 ```
 
 ---
@@ -190,78 +256,70 @@ Prefijo base: `/api/v1`
 
 Prefijo base: `/api/v1/reportes`
 
-### 3.1. Endpoints de Salud
-- **`GET /health`**
-  - **Respuesta:** `200 OK`
-    ```json
-    {
-      "status": "ok",
-      "service": "reportes-api",
-      "spark_engine": "ready"
-    }
-    ```
+### 3.1. Endpoints de Diagnóstico
+- `GET /health`: Estado liveness.
+- `GET /ready`: Estado readiness (conexión a PostgreSQL).
+- `GET /metrics`: Métricas Prometheus.
 
----
+### 3.2. Endpoints de Reportes Estadísticos
 
-### 3.2. Endpoints Analíticos (Procesamiento Spark)
-
-#### `GET /api/v1/reportes/ventas-diarias`
-- **Parámetros Query:**
-  - `fecha` (opcional, formato `YYYY-MM-DD`, por defecto fecha actual).
-- **Descripción:** Ejecuta la agregación de ventas diarias vía PySpark sobre la tabla de ventas, consolidando transacciones.
-- **Respuesta Exitosa (`200 OK`):**
+#### `GET /api/v1/reportes/ventas-hoy`
+- **Respuesta (`200 OK`):**
 ```json
 {
   "fecha": "2026-11-10",
-  "total_ingresos": 1420.50,
-  "total_transacciones": 48,
-  "ticket_promedio": 29.59,
-  "motor_procesamiento": "Apache Spark 3.5.x"
+  "total_ventas": 12,
+  "total_ingresos": 348.50,
+  "ticket_promedio": 29.04
 }
 ```
 
 #### `GET /api/v1/reportes/productos-top`
-- **Parámetros Query:**
-  - `limite` (opcional, entero, por defecto `5`).
-- **Descripción:** Ejecuta el job distribuido de PySpark que une `detalle_ventas` y `productos`, calculando los artículos de mayor rotación y recaudación.
-- **Respuesta Exitosa (`200 OK`):**
+- **Query Params:** `limite` (default: 5)
+- **Respuesta (`200 OK`):**
 ```json
-{
-  "criterio": "volumen_unidades",
-  "generado_en": "2026-11-10T11:00:00Z",
-  "ranking": [
-    {
-      "ranking": 1,
-      "producto_id": 1,
-      "nombre": "Arroz Costeño 1kg",
-      "unidades_vendidas": 150,
-      "total_recaudado": 675.00
-    },
-    {
-      "ranking": 2,
-      "producto_id": 3,
-      "nombre": "Leche Gloria Azul 400g",
-      "unidades_vendidas": 120,
-      "total_recaudado": 504.00
-    },
-    {
-      "ranking": 3,
-      "producto_id": 2,
-      "nombre": "Aceite Primor 1L",
-      "unidades_vendidas": 65,
-      "total_recaudado": 598.00
-    }
-  ]
-}
+[
+  {
+    "ranking": 1,
+    "product_id": 1,
+    "product_name": "Arroz Costeño 1kg",
+    "unidades_vendidas": 45,
+    "total_recaudado": 202.50
+  },
+  {
+    "ranking": 2,
+    "product_id": 3,
+    "product_name": "Leche Gloria Azul 400g",
+    "unidades_vendidas": 38,
+    "total_recaudado": 159.60
+  }
+]
 ```
 
-#### `POST /api/v1/reportes/trigger-batch`
-- **Descripción:** Dispara manualmente el procesamiento batch en Spark para actualizar tablas analíticas pre-agregadas.
-- **Respuesta Exitosa (`202 Accepted`):**
+#### `GET /api/v1/reportes/ventas-agrupadas-dia`
+- **Query Params:** `dias` (default: 7)
+- **Respuesta (`200 OK`):**
+```json
+[
+  {
+    "fecha": "2026-11-09",
+    "numero_ventas": 8,
+    "total_ingresos": 215.00
+  },
+  {
+    "fecha": "2026-11-10",
+    "numero_ventas": 12,
+    "total_ingresos": 348.50
+  }
+]
+```
+
+#### `GET /api/v1/reportes/resumen-general`
+- **Respuesta (`200 OK`):**
 ```json
 {
-  "job_id": "spark-job-batch-20261110-01",
-  "status": "RUNNING",
-  "mensaje": "Job de PySpark despachado satisfactoriamente."
+  "total_ventas_historicas": 120,
+  "ingresos_totales_historicos": 4520.80,
+  "total_productos_activos": 15
 }
 ```
