@@ -48,7 +48,14 @@ multipass launch \
 
 echo ""
 echo "⏳ Esperando a que Cloud-init complete la inicialización de paquetes..."
-multipass exec "${VM_NAME}" -- cloud-init status --wait
+multipass exec "${VM_NAME}" -- cloud-init status --wait || true
+
+INIT_STATUS=$(multipass exec "${VM_NAME}" -- cloud-init status --format json 2>/dev/null | jq -r .status || echo "unknown")
+if [ "$INIT_STATUS" = "error" ]; then
+    echo "❌ Error: Cloud-init finalizó en estado de error."
+    multipass exec "${VM_NAME}" -- cloud-init status --long || true
+    exit 1
+fi
 
 echo ""
 echo "✅ VM Ubuntu '${VM_NAME}' aprovisionada exitosamente:"
@@ -56,4 +63,4 @@ multipass info "${VM_NAME}"
 
 echo ""
 echo "🎉 Ejecutando prueba de conectividad y herramientas en la VM..."
-multipass exec "${VM_NAME}" -- /home/cloud-admin/test-connectivity.sh
+multipass exec "${VM_NAME}" -- sudo -u cloud-admin /home/cloud-admin/test-connectivity.sh
