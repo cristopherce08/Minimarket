@@ -11,6 +11,10 @@ global:
     backend: minimarket-backend
     data: minimarket-data
 
+backend:
+  # Secret preexistente en minimarket-backend con variables sensibles (DATABASE_URL)
+  existingSecret: "backend-db-secret"
+
 # -------------------------------------------------------------
 # Base de Datos PostgreSQL (namespace: minimarket-data)
 # -------------------------------------------------------------
@@ -31,9 +35,9 @@ postgresql:
   auth:
     database: minimarket_db
     username: minimarket_user
-    # Nota: En producción las credenciales se inyectan mediante SealedSecrets o Vault
-    existingSecret: ""
-    password: "minimarket_password"
+    # En entornos seguros, se referencia un Secret preexistente fuera del repositorio
+    existingSecret: "postgres-secret"
+    password: ""
   resources:
     requests:
       cpu: 100m
@@ -59,7 +63,7 @@ ventasApi:
     APP_PORT: "8000"
     LOW_STOCK_THRESHOLD: "5"
     CORS_ORIGINS: "*"
-    DATABASE_URL: "postgresql+psycopg://minimarket_user:minimarket_password@postgres.minimarket-data.svc.cluster.local:5432/minimarket_db"
+    # NOTA: DATABASE_URL se inyecta de forma segura desde el Secret backend-db-secret
   resources:
     requests:
       cpu: 100m
@@ -100,7 +104,7 @@ reportesApi:
   env:
     APP_PORT: "8001"
     CORS_ORIGINS: "*"
-    DATABASE_URL: "postgresql+psycopg://minimarket_user:minimarket_password@postgres.minimarket-data.svc.cluster.local:5432/minimarket_db"
+    # NOTA: DATABASE_URL se inyecta de forma segura desde el Secret backend-db-secret
   resources:
     requests:
       cpu: 100m

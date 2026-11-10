@@ -60,7 +60,21 @@ REVISION: 1
 
 ---
 
-## 3. Verificación de Health Checks y Probes
+## 3. Gestión Segura de Credenciales (Zero Secret Hardcoding)
+
+Para cumplir con las directivas de seguridad en la nube:
+1. **Eliminación de Secretos en Archivos Versionados:**
+   - Ni contraseñas ni URLs de base de datos (`DATABASE_URL`) se encuentran escritas en texto plano en `values.yaml` ni en `backend-config` (ConfigMap).
+2. **Uso de Kubernetes Secrets:**
+   - `postgres-secret` (namespace `minimarket-data`): Almacena `POSTGRES_USER`, `POSTGRES_PASSWORD` y `POSTGRES_DB`.
+   - `backend-db-secret` (namespace `minimarket-backend`): Almacena la cadena de conexión completa `DATABASE_URL` inyectada vía `valueFrom.secretKeyRef`.
+3. **Soporte de `existingSecret`:**
+   - Los templates de despliegue (`postgres-deployment.yaml`, `ventas-api-deployment.yaml`, `reportes-api-deployment.yaml`) hacen referencia a secrets preexistentes gestionados mediante variables de entorno o gestores externos (SealedSecrets / Vault).
+   - El template `secret.yaml` solo se renderiza condicionalmente si no existe un secret previo y se provee explícitamente en el comando de despliegue.
+
+---
+
+## 4. Verificación de Health Checks y Probes
 
 Todos los microservicios cuentan con sondas de vitalidad (`livenessProbe`) y disponibilidad (`readinessProbe`):
 
@@ -73,7 +87,7 @@ kubectl describe deployment/ventas-api -n minimarket-backend | grep -E "Liveness
 
 ---
 
-## 4. Coordinación Inter-Módulos
+## 5. Coordinación Inter-Módulos
 
 1. **Con Integrante 2 (Desarrollo / HPA):**
    - El Deployment `ventas-api` se configuró con `resources.requests` y `resources.limits` precisos, condición indispensable para que el Metrics Server de Kubernetes pueda calcular el porcentaje de utilización de CPU/RAM y activar el `HorizontalPodAutoscaler` (HPA).

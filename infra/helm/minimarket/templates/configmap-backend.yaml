@@ -9,4 +9,3 @@ data:
   APP_ENV: {{ .Values.global.environment | quote }}
   LOW_STOCK_THRESHOLD: {{ .Values.ventasApi.env.LOW_STOCK_THRESHOLD | quote }}
   CORS_ORIGINS: {{ .Values.ventasApi.env.CORS_ORIGINS | quote }}
-  DATABASE_URL: {{ .Values.ventasApi.env.DATABASE_URL | quote }}

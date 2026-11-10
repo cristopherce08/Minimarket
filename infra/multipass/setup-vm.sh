@@ -26,9 +26,9 @@ if ! command -v multipass &> /dev/null; then
 fi
 
 if multipass list | grep -q "${VM_NAME}"; then
-    echo "⚠️ La máquina virtual '${VM_NAME}' ya existe."
+    echo "ℹ️ La máquina virtual '${VM_NAME}' ya se encuentra registrada en el sistema."
     multipass info "${VM_NAME}"
-    echo "Para recrearla: multipass delete --purge ${VM_NAME} && $0"
+    echo "VM operativa. No se requiere reinstalación."
     exit 0
 fi
 

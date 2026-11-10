@@ -32,6 +32,12 @@ spec:
           envFrom:
             - configMapRef:
                 name: backend-config
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.backend.existingSecret | default "backend-db-secret" }}
+                  key: DATABASE_URL
           resources:
             {{- toYaml .Values.reportesApi.resources | nindent 12 }}
           livenessProbe:

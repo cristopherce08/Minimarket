@@ -28,13 +28,15 @@ packages:
   - ca-certificates
 
 # Creación de usuario administrador de infraestructura
+# Autenticación segura: contraseña bloqueada para prevenir accesos no autenticados en consola
 users:
+  - default
   - name: cloud-admin
     gecos: Administrador Cloud MiniMarket
     sudo: ALL=(ALL) NOPASSWD:ALL
     groups: [sudo, adm]
     shell: /bin/bash
-    lock_passwd: false
+    lock_passwd: true
 
 # Configuración de archivos locales en la VM
 write_files:

@@ -32,17 +32,17 @@ spec:
             - name: POSTGRES_USER
               valueFrom:
                 secretKeyRef:
-                  name: postgres-secret
+                  name: {{ .Values.postgresql.auth.existingSecret | default "postgres-secret" }}
                   key: POSTGRES_USER
             - name: POSTGRES_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: postgres-secret
+                  name: {{ .Values.postgresql.auth.existingSecret | default "postgres-secret" }}
                   key: POSTGRES_PASSWORD
             - name: POSTGRES_DB
               valueFrom:
                 secretKeyRef:
-                  name: postgres-secret
+                  name: {{ .Values.postgresql.auth.existingSecret | default "postgres-secret" }}
                   key: POSTGRES_DB
           resources:
             {{- toYaml .Values.postgresql.resources | nindent 12 }}

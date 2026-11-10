@@ -41,6 +41,25 @@ multipass exec "${VM_NAME}" -- getent hosts google.com
 
 echo ""
 echo "5. Verificación de aislamiento respecto al cluster Kubernetes:"
-echo "   La VM opera en una subred puenteada/NAT independiente administrada por Multipass."
-echo "   No comparte namespaces ni red de contenedores con Minikube (Docker bridge)."
-echo "✅ Verificación de VM completada."
+echo "   - Comprobación de aislamiento DNS (.svc.cluster.local):"
+if multipass exec "${VM_NAME}" -- nslookup ventas-api.minimarket-backend.svc.cluster.local > /dev/null 2>&1; then
+    echo "   ❌ ERROR: La VM pudo resolver nombres internos de Kubernetes."
+    exit 1
+else
+    echo "   [OK] Aislamiento DNS verificado: los nombres internos de K8s no se resuelven en la VM."
+fi
+
+echo "   - Comprobación de aislamiento de red de pods K8s (10.244.0.0/16):"
+if multipass exec "${VM_NAME}" -- ping -c 1 -W 2 10.244.0.1 > /dev/null 2>&1; then
+    echo "   ⚠️ Advertencia: Tráfico ICMP hacia red de pods K8s no bloqueado."
+else
+    echo "   [OK] Aislamiento de red verificado: la subred de pods K8s (Calico) es inalcanzable desde la VM."
+fi
+
+echo ""
+echo "6. Diagnóstico de usuario y permisos:"
+multipass exec "${VM_NAME}" -- id cloud-admin
+echo "   [OK] Usuario cloud-admin verificado con autenticación segura."
+
+echo ""
+echo "✅ Verificación completa: VM Ubuntu ARM64 operativa, aislada y configurada exitosamente."

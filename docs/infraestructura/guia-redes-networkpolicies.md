@@ -12,7 +12,7 @@ Por defecto, en Kubernetes todos los pods pueden comunicarse entre sí sin impor
 |---|---|---|
 | [`00-default-deny-data.yaml`](file:///Users/cristopher/Minimarket/infra/k8s/network-policies/00-default-deny-data.yaml) | `minimarket-data` | Bloquea todo tráfico entrante (`DefaultDeny`) a cualquier pod de datos. |
 | [`01-allow-postgres-from-backend.yaml`](file:///Users/cristopher/Minimarket/infra/k8s/network-policies/01-allow-postgres-from-backend.yaml) | `minimarket-data` | Permite conexiones en el puerto `5432/TCP` hacia PostgreSQL **únicamente** desde pods con etiquetas `app: ventas-api`, `app: reportes-api` o `app: spark-job` del namespace `minimarket-backend`. |
-| [`02-allow-backend-traffic.yaml`](file:///Users/cristopher/Minimarket/infra/k8s/network-policies/02-allow-backend-traffic.yaml) | `minimarket-backend` | Permite tráfico HTTP entrante en puertos `8000` y `8001` desde `minimarket-frontend`, tráfico entre pods backend, checks del kubelet y salida a PostgreSQL y DNS (puerto 53). |
+| [`02-allow-backend-traffic.yaml`](file:///Users/cristopher/Minimarket/infra/k8s/network-policies/02-allow-backend-traffic.yaml) | `minimarket-backend` | Permite tráfico HTTP entrante en puertos `8000` y `8001` exclusivamente desde pods con `tier: frontend` de `minimarket-frontend`, tráfico entre pods backend (`tier: backend`), liveness/readiness probes del Kubelet originadas en el nodo (`192.168.49.0/24`), y scraping desde namespaces de observabilidad (`observabilidad`, `monitoring`, `istio-system`, `chaos-testing`). Bloquea todo tráfico no autorizado del resto del clúster. Permite salida a PostgreSQL y DNS. |
 | [`03-allow-frontend-traffic.yaml`](file:///Users/cristopher/Minimarket/infra/k8s/network-policies/03-allow-frontend-traffic.yaml) | `minimarket-frontend` | Permite tráfico HTTP entrante en puerto `80`. Permite salida hacia backend (8000/8001) y DNS. **Prohíbe terminantemente salida hacia el puerto 5432 de datos.** |
 
 ---
@@ -70,3 +70,18 @@ kubectl run test-frontend-to-backend --rm -i --restart=Never \
 }
 ```
 *Conclusión:* La comunicación legítima entre capas requerida por la aplicación opera sin contratiempos.
+
+---
+
+### Prueba 4: Conexión Bloqueada desde Pod no Autorizado en Namespace `default` (Prueba Negativa)
+```bash
+kubectl run rogue-test-pod --namespace default --image=busybox:1.36 --restart=Never \
+  --command -- sh -c "wget -T 3 -qO- http://ventas-api.minimarket-backend.svc.cluster.local:8000/health && echo 'FALLO_SEGURIDAD' || echo 'BLOQUEADO_CORRECTAMENTE'"
+```
+**Resultado Real Obtenido:**
+```text
+wget: download timed out
+BLOQUEADO_CORRECTAMENTE
+pod "rogue-test-pod" deleted from default namespace
+```
+*Conclusión:* Un pod cualquiera en el clúster sin las etiquetas o namespaces autorizados no puede acceder a las APIs de backend en los puertos 8000 o 8001. La política `allow-backend-traffic` cierra eficazmente la brecha de puertos abiertos.

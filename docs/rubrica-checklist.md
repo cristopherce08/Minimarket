@@ -23,7 +23,8 @@ Este documento detalla los **cinco criterios de evaluación** oficiales para el 
 **Objetivo:** Demostrar aprovisionamiento automatizado, segmentación y aislamiento de tráfico a nivel de red.
 
 - [x] **Configuración de VM Ubuntu con Multipass y Cloud-init:**
-  - Manifiesto `infra/multipass/cloud-init.yaml` y scripts reproducibles `setup-vm.sh` y `verify-vm.sh`.
+  - Manifiesto `infra/multipass/cloud-init.yaml` con usuario endurecido `cloud-admin` (contraseña bloqueada para acceso directo, login seguro) y scripts reproducibles `setup-vm.sh` y `verify-vm.sh`.
+  - Verificación de aislamiento de red y DNS entre el hipervisor de la VM y la red de pods de Minikube.
   - *Evidencia documentada:* [`docs/infraestructura/guia-multipass-ubuntu.md`](infraestructura/guia-multipass-ubuntu.md).
 - [x] **Aislamiento con Docker Networks y Namespaces de Kubernetes:**
   - Namespaces dedicados creados: `minimarket-frontend`, `minimarket-backend`, `minimarket-data`.
@@ -32,23 +33,30 @@ Este documento detalla los **cinco criterios de evaluación** oficiales para el 
 - [x] **Políticas de red L3/L4 (Kubernetes NetworkPolicies con Calico):**
   - Regla que prohíbe el acceso directo del Frontend al pod de PostgreSQL (verificado: `Connection timed out`).
   - Regla de entrada autorizada a PostgreSQL solo para el backend (verificado: port 5432 `open`).
+  - Regla de ingress backend securitizada: autoriza exclusivamente a frontend (`tier: frontend`), inter-backend (`tier: backend`), probes del Kubelet (`192.168.49.0/24`) y namespaces autorizados de observabilidad.
+  - Prueba negativa demostrada: pod en namespace `default` intentando acceder a backend o postgres resulta bloqueado (`wget: download timed out`).
   - *Evidencia documentada:* [`docs/infraestructura/guia-redes-networkpolicies.md`](infraestructura/guia-redes-networkpolicies.md).
 
 ---
 
 ### Criterio 2: Orquestación K8s y Empaquetado
 
-**Objetivo:** Demostrar buenas prácticas de contenerización y automatización del despliegue en Kubernetes.
+**Objetivo:** Demostrar buenas prácticas de contenerización, seguridad de credenciales y automatización del despliegue en Kubernetes.
 
 - [x] **Dockerfiles optimizados (Multi-stage builds):**
   - Dockerfiles para `frontend`, `ventas-api` y `reportes-api` en Python 3.12 y Nginx Alpine.
   - *Evidencia documentada:* Imágenes generadas y cargadas en Minikube (`minikube image load`).
 - [x] **Manifiestos y Helm Chart Modular:**
   - Chart `infra/helm/minimarket` validado limpiamente con `helm lint` y renderizado con `helm template`.
-  - Despliegue funcional en Minikube (`helm install minimarket infra/helm/minimarket`).
+  - Despliegue funcional en Minikube (`helm install minimarket infra/helm/minimarket` y `helm upgrade`).
   - Health checks configurados (`livenessProbe` a `/health` y `readinessProbe` a `/ready` operando en 200 OK).
   - Límites y requests de CPU/RAM configurados para soporte de HPA.
   - *Evidencia documentada:* [`docs/infraestructura/guia-helm-despliegue.md`](infraestructura/guia-helm-despliegue.md).
+- [x] **Seguridad de Credenciales y Manejo de Secretos:**
+  - Ninguna contraseña ni cadena `DATABASE_URL` se encuentra en archivos versionados (`values.yaml`, ConfigMaps).
+  - ConfigMaps limitados estrictamente a datos no sensibles (`APP_ENV`, `LOW_STOCK_THRESHOLD`, `CORS_ORIGINS`).
+  - Uso de Kubernetes Secrets (`postgres-secret` en namespace `minimarket-data` y `backend-db-secret` en `minimarket-backend`) inyectados mediante `secretKeyRef`.
+  - Soporte completo del parámetro `existingSecret` para integración con SealedSecrets o Vault en producción.
 
 ---
 
@@ -107,3 +115,26 @@ Este documento detalla los **cinco criterios de evaluación** oficiales para el 
 - [ ] **Script de Dimensionamiento Físico y TCO:**
   - Script interactivo en Bash (`infra/tco/dimensionamiento_tco.sh`) para cálculo de Watts, BTU/hr y TCO a 3 años.
   - *Evidencia requerida:* Ejecución del script en consola con salida de costos y disipación térmica.
+
+---
+
+## Preparación de Infraestructura para Integrantes 3 y 4
+
+El Integrante 1 (Infraestructura) deja la base del clúster lista y configurada para el trabajo de los siguientes roles:
+
+### Preparado para Integrante 3 (Datos y Persistencia)
+1. **PostgreSQL 16 en Kubernetes:**
+   - Desplegado en namespace `minimarket-data` con PVC persistente de 2Gi (`postgres-pvc`) montado en `/var/lib/postgresql/data`.
+   - Secret `postgres-secret` configurado con credenciales de base de datos (`POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`).
+2. **Autorización de Tráfico Analítico (Spark):**
+   - La NetworkPolicy `01-allow-postgres-from-backend.yaml` autoriza explícitamente a pods con etiqueta `app: spark-job` y `tier: backend` para consultar PostgreSQL en el puerto 5432.
+3. **Estructura de Procesamiento Distribuido:**
+   - Directorio `src/spark/jobs/` reservado para los scripts analíticos de PySpark.
+
+### Preparado para Integrante 4 (Observabilidad y Resiliencia)
+1. **Recursos y Dimensionamiento para HPA:**
+   - Los deployments `ventas-api` y `reportes-api` tienen definidos `requests` y `limits` de CPU y Memoria en sus especificaciones para habilitar el autoescalado por Metrics Server.
+   - Endpoint `/metrics` expuesto en ambos microservicios para scraping de Prometheus.
+2. **Canales de Red Abiertos para Monitoreo y Malla de Servicios:**
+   - La NetworkPolicy `02-allow-backend-traffic.yaml` autoriza tráfico entrante en puertos 8000 y 8001 desde los namespaces `observabilidad`, `monitoring`, `istio-system` y `chaos-testing`.
+   - Permite la inyección de sidecars Envoy (Istio), scraping de `kube-prometheus-stack` e inyección de fallas con `Chaos Mesh` sin colisionar con las reglas de aislamiento.
