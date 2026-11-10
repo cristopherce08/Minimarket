@@ -1,0 +1,40 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Values.reportesApi.service.name }}
+  namespace: {{ .Values.global.namespaces.backend }}
+  labels:
+    app: reportes-api
+    tier: backend
+    app.kubernetes.io/component: api
+    {{- include "minimarket.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.reportesApi.replicaCount }}
+  selector:
+    matchLabels:
+      app: reportes-api
+      tier: backend
+  template:
+    metadata:
+      labels:
+        app: reportes-api
+        tier: backend
+        app.kubernetes.io/component: api
+    spec:
+      containers:
+        - name: reportes-api
+          image: "{{ .Values.reportesApi.image.repository }}:{{ .Values.reportesApi.image.tag }}"
+          imagePullPolicy: {{ .Values.reportesApi.image.pullPolicy }}
+          ports:
+            - containerPort: {{ .Values.reportesApi.service.port }}
+              name: http
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: backend-config
+          resources:
+            {{- toYaml .Values.reportesApi.resources | nindent 12 }}
+          livenessProbe:
+            {{- toYaml .Values.reportesApi.livenessProbe | nindent 12 }}
+          readinessProbe:
+            {{- toYaml .Values.reportesApi.readinessProbe | nindent 12 }}

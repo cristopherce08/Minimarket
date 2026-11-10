@@ -1,0 +1,75 @@
+#cloud-config
+# ==============================================================================
+# MiniMarket Cloud — Cloud-init Provisioning para VM Ubuntu ARM64 (Multipass)
+# Integrante 1: Infraestructura y Redes
+# ==============================================================================
+
+hostname: minimarket-vm
+fqdn: minimarket-vm.local
+manage_etc_hosts: true
+
+# Actualización inicial del sistema
+package_update: true
+package_upgrade: false
+
+# Paquetes base y herramientas de diagnóstico de red
+packages:
+  - curl
+  - wget
+  - git
+  - net-tools
+  - iputils-ping
+  - dnsutils
+  - traceroute
+  - tcpdump
+  - iperf3
+  - jq
+  - htop
+  - ca-certificates
+
+# Creación de usuario administrador de infraestructura
+users:
+  - name: cloud-admin
+    gecos: Administrador Cloud MiniMarket
+    sudo: ALL=(ALL) NOPASSWD:ALL
+    groups: [sudo, adm]
+    shell: /bin/bash
+    lock_passwd: false
+
+# Configuración de archivos locales en la VM
+write_files:
+  - path: /etc/motd
+    content: |
+      ======================================================================
+        MINIMARKET CLOUD — Nodo Bastion / Jumpbox Ubuntu ARM64
+        Curso: Servicios Cloud (UTP)
+        Entorno: Multipass VM Aislada
+        Arquitectura: Linux ARM64 (Ubuntu 24.04 LTS)
+      ======================================================================
+    permissions: '0644'
+
+  - path: /home/cloud-admin/test-connectivity.sh
+    content: |
+      #!/usr/bin/env bash
+      set -e
+      echo "=== Diagnóstico de Red de la VM Ubuntu ==="
+      echo "IP Local de la VM:"
+      ip -br addr show
+      echo ""
+      echo "Prueba de conectividad a Internet (DNS / Gateway):"
+      ping -c 3 8.8.8.8 || echo "Ping fallido"
+      echo ""
+      echo "Resolución de nombres DNS:"
+      nslookup google.com || echo "DNS fallido"
+      echo ""
+      echo "Verificación de herramientas de red:"
+      for tool in curl wget ip dig iperf3; do
+        which $tool && echo "  [OK] $tool instalado"
+      done
+    permissions: '0755'
+    owner: cloud-admin:cloud-admin
+
+# Comandos de post-instalación
+runcmd:
+  - echo "MiniMarket Cloud-Init completado exitosamente: $(date)" >> /var/log/cloud-init-minimarket.log
+  - chown -R cloud-admin:cloud-admin /home/cloud-admin

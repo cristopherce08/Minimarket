@@ -1,0 +1,146 @@
+# ==============================================================================
+# MiniMarket Cloud — Valores de Configuración del Helm Chart (values.yaml)
+# Integrante 1: Infraestructura y Redes
+# ==============================================================================
+
+global:
+  environment: production
+  appPartOf: minimarket-cloud
+  namespaces:
+    frontend: minimarket-frontend
+    backend: minimarket-backend
+    data: minimarket-data
+
+# -------------------------------------------------------------
+# Base de Datos PostgreSQL (namespace: minimarket-data)
+# -------------------------------------------------------------
+postgresql:
+  enabled: true
+  image:
+    repository: postgres
+    tag: "16-alpine"
+    pullPolicy: IfNotPresent
+  service:
+    port: 5432
+    name: postgres
+  persistence:
+    enabled: true
+    storageClass: "standard"
+    accessMode: ReadWriteOnce
+    size: 2Gi
+  auth:
+    database: minimarket_db
+    username: minimarket_user
+    # Nota: En producción las credenciales se inyectan mediante SealedSecrets o Vault
+    existingSecret: ""
+    password: "minimarket_password"
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+# -------------------------------------------------------------
+# Microservicio ventas-api (namespace: minimarket-backend)
+# -------------------------------------------------------------
+ventasApi:
+  replicaCount: 2
+  image:
+    repository: minimarket-ventas-api
+    tag: latest
+    pullPolicy: IfNotPresent
+  service:
+    type: ClusterIP
+    port: 8000
+    name: ventas-api
+  env:
+    APP_PORT: "8000"
+    LOW_STOCK_THRESHOLD: "5"
+    CORS_ORIGINS: "*"
+    DATABASE_URL: "postgresql+psycopg://minimarket_user:minimarket_password@postgres.minimarket-data.svc.cluster.local:5432/minimarket_db"
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+  livenessProbe:
+    httpGet:
+      path: /health
+      port: 8000
+    initialDelaySeconds: 5
+    periodSeconds: 10
+    timeoutSeconds: 3
+    failureThreshold: 3
+  readinessProbe:
+    httpGet:
+      path: /ready
+      port: 8000
+    initialDelaySeconds: 5
+    periodSeconds: 5
+    timeoutSeconds: 3
+    failureThreshold: 3
+
+# -------------------------------------------------------------
+# Microservicio reportes-api (namespace: minimarket-backend)
+# -------------------------------------------------------------
+reportesApi:
+  replicaCount: 1
+  image:
+    repository: minimarket-reportes-api
+    tag: latest
+    pullPolicy: IfNotPresent
+  service:
+    type: ClusterIP
+    port: 8001
+    name: reportes-api
+  env:
+    APP_PORT: "8001"
+    CORS_ORIGINS: "*"
+    DATABASE_URL: "postgresql+psycopg://minimarket_user:minimarket_password@postgres.minimarket-data.svc.cluster.local:5432/minimarket_db"
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+  livenessProbe:
+    httpGet:
+      path: /health
+      port: 8001
+    initialDelaySeconds: 5
+    periodSeconds: 10
+    timeoutSeconds: 3
+  readinessProbe:
+    httpGet:
+      path: /ready
+      port: 8001
+    initialDelaySeconds: 5
+    periodSeconds: 5
+    timeoutSeconds: 3
+
+# -------------------------------------------------------------
+# Frontend Web (namespace: minimarket-frontend)
+# -------------------------------------------------------------
+frontend:
+  replicaCount: 1
+  image:
+    repository: minimarket-frontend
+    tag: latest
+    pullPolicy: IfNotPresent
+  service:
+    type: NodePort
+    port: 80
+    nodePort: 30080
+    name: frontend
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 128Mi

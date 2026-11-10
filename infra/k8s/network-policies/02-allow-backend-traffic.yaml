@@ -1,0 +1,61 @@
+# ==============================================================================
+# MiniMarket Cloud — NetworkPolicy: Tráfico autorizado en minimarket-backend
+# ==============================================================================
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-backend-traffic
+  namespace: minimarket-backend
+  labels:
+    app.kubernetes.io/part-of: minimarket-cloud
+spec:
+  podSelector:
+    matchLabels:
+      tier: backend
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # 1. Tráfico HTTP desde el frontend
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              name: minimarket-frontend
+      ports:
+        - protocol: TCP
+          port: 8000
+        - protocol: TCP
+          port: 8001
+    # 2. Tráfico interno entre servicios backend (e.g. reportes-api a ventas-api)
+    - from:
+        - podSelector:
+            matchLabels:
+              tier: backend
+      ports:
+        - protocol: TCP
+          port: 8000
+        - protocol: TCP
+          port: 8001
+    # 3. Kubelet health checks (liveness/readiness probes) y futuro scraping de Prometheus
+    - ports:
+        - protocol: TCP
+          port: 8000
+        - protocol: TCP
+          port: 8001
+  egress:
+    # 1. Salida hacia PostgreSQL en minimarket-data
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              name: minimarket-data
+      ports:
+        - protocol: TCP
+          port: 5432
+    # 2. Resolución de nombres DNS (CoreDNS en kube-system)
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
