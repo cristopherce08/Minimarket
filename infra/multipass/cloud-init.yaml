@@ -48,30 +48,37 @@ write_files:
         Entorno: Multipass VM Aislada
         Arquitectura: Linux ARM64 (Ubuntu 24.04 LTS)
       ======================================================================
-    permissions: '0644'
 
   - path: /home/cloud-admin/test-connectivity.sh
     content: |
       #!/usr/bin/env bash
-      set -e
+      set -euo pipefail
       echo "=== Diagnóstico de Red de la VM Ubuntu ==="
       echo "IP Local de la VM:"
       ip -br addr show
       echo ""
-      echo "Prueba de conectividad a Internet (DNS / Gateway):"
+      echo "Prueba de conectividad a Internet (Ping a 8.8.8.8):"
       ping -c 3 8.8.8.8 || echo "Ping fallido"
       echo ""
-      echo "Resolución de nombres DNS:"
-      nslookup google.com || echo "DNS fallido"
+      echo "Resolución de nombres DNS (google.com):"
+      getent hosts google.com || echo "DNS fallido"
       echo ""
-      echo "Verificación de herramientas de red:"
-      for tool in curl wget ip dig iperf3; do
-        which $tool && echo "  [OK] $tool instalado"
+      echo "Verificación de herramientas de red instaladas:"
+      for tool in curl wget ip dig iperf3 tcpdump traceroute; do
+        if which $tool > /dev/null 2>&1; then
+          echo "  [OK] $tool instalado"
+        else
+          echo "  [MISSING] $tool no encontrado"
+        fi
       done
-    permissions: '0755'
     owner: cloud-admin:cloud-admin
+    defer: true
 
 # Comandos de post-instalación
+# NOTA DE SEGURIDAD Y SINTAXIS: Cada comando debe ir entre comillas para evitar
+# que secuencias como ': ' sean interpretadas como mapeos YAML inválidos.
+# Los permisos ejecutables se asignan aquí para evitar conversiones de tipo en Multipass.
 runcmd:
-  - echo "MiniMarket Cloud-Init completado exitosamente: $(date)" >> /var/log/cloud-init-minimarket.log
-  - chown -R cloud-admin:cloud-admin /home/cloud-admin
+  - 'echo "MiniMarket Cloud-Init completado exitosamente: $(date)" >> /var/log/cloud-init-minimarket.log'
+  - 'chmod 0755 /home/cloud-admin/test-connectivity.sh'
+  - 'chown -R cloud-admin:cloud-admin /home/cloud-admin'

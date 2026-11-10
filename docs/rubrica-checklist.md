@@ -23,8 +23,9 @@ Este documento detalla los **cinco criterios de evaluación** oficiales para el 
 **Objetivo:** Demostrar aprovisionamiento automatizado, segmentación y aislamiento de tráfico a nivel de red.
 
 - [x] **Configuración de VM Ubuntu con Multipass y Cloud-init:**
-  - Manifiesto `infra/multipass/cloud-init.yaml` con usuario endurecido `cloud-admin` (contraseña bloqueada para acceso directo, login seguro) y scripts reproducibles `setup-vm.sh` y `verify-vm.sh`.
-  - Verificación de aislamiento de red y DNS entre el hipervisor de la VM y la red de pods de Minikube.
+  - Manifiesto `infra/multipass/cloud-init.yaml` corregido y validado con `cloud-init schema` (resueltos errores de sintaxis YAML en `runcmd`, `defer: true` en `write_files` para usuario `cloud-admin`, y comandos con comillas).
+  - Aprovisionamiento comprobado desde cero (`cloud-init status` en `done`, paquetes de red instalados, usuario `cloud-admin` con login seguro, script `/home/cloud-admin/test-connectivity.sh` operativo).
+  - Verificación de aislamiento de red (L3/L4) y resolución DNS independiente respecto a la red de pods de Minikube.
   - *Evidencia documentada:* [`docs/infraestructura/guia-multipass-ubuntu.md`](infraestructura/guia-multipass-ubuntu.md).
 - [x] **Aislamiento con Docker Networks y Namespaces de Kubernetes:**
   - Namespaces dedicados creados: `minimarket-frontend`, `minimarket-backend`, `minimarket-data`.
