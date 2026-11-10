@@ -29,9 +29,13 @@ postgresql:
     name: postgres
   persistence:
     enabled: true
-    storageClass: "standard"
+    storageClass: "minimarket-local"
     accessMode: ReadWriteOnce
     size: 2Gi
+    pv:
+      enabled: true
+      name: postgres-pv
+      hostPath: /data/minimarket-postgres
   auth:
     database: minimarket_db
     username: minimarket_user
