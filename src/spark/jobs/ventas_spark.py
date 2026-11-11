@@ -16,11 +16,21 @@ Variables de entorno:
 import os
 import time
 from collections import Counter
+from urllib.parse import unquote, urlsplit
  
-from pyspark import StorageLevel
-from pyspark.sql import SparkSession, Window
-from pyspark.sql import functions as F
-from pyspark.sql.types import DecimalType, IntegerType, LongType
+try:
+    from pyspark import StorageLevel
+    from pyspark.sql import SparkSession, Window
+    from pyspark.sql import functions as F
+    from pyspark.sql.types import DecimalType, IntegerType, LongType
+except ImportError:
+    StorageLevel = None
+    SparkSession = None
+    Window = None
+    F = None
+    DecimalType = None
+    IntegerType = None
+    LongType = None
  
 NUM_VENTAS = int(os.getenv("NUM_VENTAS", "200000"))
 NUM_PARTICIONES = int(os.getenv("NUM_PARTICIONES", "8"))
@@ -29,7 +39,7 @@ TOP_N = int(os.getenv("TOP_N", "10"))
 SEED = int(os.getenv("SEED", "42"))
 ESPERA_FINAL = int(os.getenv("ESPERA_FINAL", "90"))
  
-MONEDA = DecimalType(16, 2)
+MONEDA = DecimalType(16, 2) if DecimalType is not None else None
  
  
 def generar_ventas(spark, catalogo, num_ventas, num_particiones, dias, seed):
@@ -136,6 +146,40 @@ def _opciones_jdbc(url, usuario, clave):
     }
 
 
+def parse_database_url(url_str: str) -> tuple[str, str, str]:
+    """Parsea una URL de base de datos PostgreSQL y devuelve (jdbc_url, usuario, clave).
+
+    Soporta esquemas postgresql:// y postgresql+psycopg://, credenciales con caracteres
+    especiales codificados en URL (percent-encoded), puertos explícitos o por defecto (5432),
+    y no expone contraseñas en mensajes de error o excepciones.
+    """
+    if not url_str or not isinstance(url_str, str):
+        raise ValueError("DATABASE_URL no puede estar vacia")
+
+    normalized = url_str.strip()
+    if normalized.startswith("postgresql+psycopg://"):
+        normalized = "postgresql://" + normalized[len("postgresql+psycopg://"):]
+    elif not normalized.startswith("postgresql://"):
+        raise ValueError("Esquema de base de datos no compatible. Se espera postgresql://")
+
+    try:
+        parsed = urlsplit(normalized)
+    except Exception:
+        raise ValueError("Formato de DATABASE_URL invalido") from None
+
+    if not parsed.hostname:
+        raise ValueError("DATABASE_URL invalida: host no especificado")
+
+    user = unquote(parsed.username) if parsed.username is not None else ""
+    password = unquote(parsed.password) if parsed.password is not None else ""
+    host = parsed.hostname
+    port = parsed.port if parsed.port is not None else 5432
+    db_name = parsed.path.lstrip("/") if parsed.path else "minimarket_db"
+
+    jdbc_url = f"jdbc:postgresql://{host}:{port}/{db_name}"
+    return jdbc_url, user, password
+
+
 def obtener_credenciales_bd():
     """Obtiene credenciales de base de datos de forma segura sin exponer secretos."""
     # 1. Si se configuran variables JDBC explícitas
@@ -144,12 +188,7 @@ def obtener_credenciales_bd():
 
     # 2. Si se configura DATABASE_URL estándar (backend-db-secret de Kubernetes)
     if os.getenv("DATABASE_URL"):
-        raw = os.environ["DATABASE_URL"]
-        clean = raw.replace("postgresql+psycopg://", "").replace("postgresql://", "")
-        creds, rest = clean.split("@", 1)
-        user, password = creds.split(":", 1)
-        jdbc_url = f"jdbc:postgresql://{rest}"
-        return jdbc_url, user, password
+        return parse_database_url(os.environ["DATABASE_URL"])
 
     raise RuntimeError(
         "SEGURIDAD: Faltan credenciales de base de datos para el Job Spark. "
