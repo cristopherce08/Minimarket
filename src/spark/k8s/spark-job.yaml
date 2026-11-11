@@ -1,0 +1,88 @@
+# ==============================================================================
+# MiniMarket Cloud - Job de Spark (driver en modo cliente dentro del cluster)
+# El driver crea 2 pods ejecutores. Ambos llevan la etiqueta app=spark-job, que
+# es la que autoriza la NetworkPolicy "allow-postgres-from-backend".
+#
+# Ejecutar:  kubectl apply -f src/spark/k8s/spark-job.yaml
+# Repetir:   kubectl delete job ventas-spark -n minimarket-backend  (y volver a aplicar)
+# ==============================================================================
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: ventas-spark
+  namespace: minimarket-backend
+  labels:
+    app: spark-job
+    app.kubernetes.io/part-of: minimarket-cloud
+spec:
+  backoffLimit: 0
+  template:
+    metadata:
+      labels:
+        app: spark-job
+        spark-role: driver-client
+    spec:
+      serviceAccountName: spark
+      restartPolicy: Never
+      containers:
+        - name: spark-driver
+          image: minimarket-spark:latest
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: POD_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+            - name: JDBC_URL
+              valueFrom:
+                secretKeyRef:
+                  name: spark-db-secret
+                  key: JDBC_URL
+            - name: DB_USER
+              valueFrom:
+                secretKeyRef:
+                  name: spark-db-secret
+                  key: DB_USER
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: spark-db-secret
+                  key: DB_PASSWORD
+            - name: NUM_VENTAS
+              value: "200000"
+            - name: NUM_PARTICIONES
+              value: "8"
+            - name: ESPERA_FINAL
+              value: "90"
+          resources:
+            requests:
+              cpu: 250m
+              memory: 768Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+          command: ["/bin/bash", "-c"]
+          args:
+            - |
+              /opt/spark/bin/spark-submit \
+                --master k8s://https://kubernetes.default.svc:443 \
+                --deploy-mode client \
+                --name ventas-spark \
+                --driver-memory 512m \
+                --conf spark.driver.host=$POD_IP \
+                --conf spark.driver.bindAddress=0.0.0.0 \
+                --conf spark.driver.port=7078 \
+                --conf spark.blockManager.port=7079 \
+                --conf spark.kubernetes.namespace=minimarket-backend \
+                --conf spark.kubernetes.driver.pod.name=$HOSTNAME \
+                --conf spark.kubernetes.container.image=minimarket-spark:latest \
+                --conf spark.kubernetes.container.image.pullPolicy=IfNotPresent \
+                --conf spark.kubernetes.executor.label.app=spark-job \
+                --conf spark.executor.instances=2 \
+                --conf spark.executor.cores=1 \
+                --conf spark.kubernetes.executor.request.cores=500m \
+                --conf spark.executor.memory=512m \
+                --conf spark.scheduler.minRegisteredResourcesRatio=1.0 \
+                --conf spark.scheduler.maxRegisteredResourcesWaitingTime=120s \
+                /opt/spark/work-dir/jobs/ventas_spark.py
+ 
