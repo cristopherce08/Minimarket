@@ -29,11 +29,11 @@ postgresql:
     name: postgres
   persistence:
     enabled: true
-    storageClass: "minimarket-local"
+    storageClass: "standard"
     accessMode: ReadWriteOnce
     size: 2Gi
     pv:
-      enabled: true
+      enabled: false
       name: postgres-pv
       hostPath: /data/minimarket-postgres
   auth:
@@ -152,3 +152,10 @@ frontend:
     limits:
       cpu: 200m
       memory: 128Mi
+
+# -------------------------------------------------------------
+# Migraciones de base de datos Alembic (namespace: minimarket-backend)
+# -------------------------------------------------------------
+migrations:
+  enabled: true
+

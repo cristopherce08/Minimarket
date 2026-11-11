@@ -43,10 +43,9 @@ logging.basicConfig(
 )
 logger = logging.getLogger("analisis_ventas_spark")
 
-DATABASE_URL = os.getenv(
-    "DATABASE_URL",
-    "postgresql://minimarket_user:minimarket_password@localhost:5433/minimarket_db",
-)
+DATABASE_URL = os.getenv("DATABASE_URL")
+if not DATABASE_URL:
+    raise RuntimeError("Variable de entorno DATABASE_URL no configurada para analisis_ventas.")
 SPARK_MASTER = os.getenv("SPARK_MASTER", "local[*]")
 
 # Convertir URL SQLAlchemy → JDBC (Spark usa formato JDBC)

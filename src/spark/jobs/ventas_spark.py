@@ -93,12 +93,22 @@ def calcular_agregados(ventas, top_n):
         .select("ranking", "product_id", "product_name", "unidades_vendidas", "total_recaudado")
     )
  
-    resumen = ventas.agg(
-        F.count("sale_id").cast(LongType()).alias("total_ventas"),
-        F.sum("subtotal").cast(MONEDA).alias("ingresos_totales"),
-        F.countDistinct("product_id").cast(IntegerType()).alias("total_productos"),
-    ).select(
-        F.lit(1).alias("id"), "total_ventas", "ingresos_totales", "total_productos"
+    ts = F.current_timestamp()
+    ventas_por_dia = ventas_por_dia.withColumn("procesado_en", ts)
+    productos_top = productos_top.withColumn("procesado_en", ts)
+    resumen = (
+        ventas.agg(
+            F.count("sale_id").cast(LongType()).alias("total_ventas"),
+            F.sum("subtotal").cast(MONEDA).alias("ingresos_totales"),
+            F.countDistinct("product_id").cast(IntegerType()).alias("total_productos"),
+        )
+        .select(
+            F.lit(1).alias("id"),
+            "total_ventas",
+            "ingresos_totales",
+            "total_productos",
+            ts.alias("procesado_en"),
+        )
     )
     return ventas_por_dia, productos_top, resumen
  
@@ -124,8 +134,29 @@ def _opciones_jdbc(url, usuario, clave):
         "password": clave,
         "driver": "org.postgresql.Driver",
     }
- 
- 
+
+
+def obtener_credenciales_bd():
+    """Obtiene credenciales de base de datos de forma segura sin exponer secretos."""
+    # 1. Si se configuran variables JDBC explícitas
+    if os.getenv("JDBC_URL") and os.getenv("DB_USER") and os.getenv("DB_PASSWORD"):
+        return os.environ["JDBC_URL"], os.environ["DB_USER"], os.environ["DB_PASSWORD"]
+
+    # 2. Si se configura DATABASE_URL estándar (backend-db-secret de Kubernetes)
+    if os.getenv("DATABASE_URL"):
+        raw = os.environ["DATABASE_URL"]
+        clean = raw.replace("postgresql+psycopg://", "").replace("postgresql://", "")
+        creds, rest = clean.split("@", 1)
+        user, password = creds.split(":", 1)
+        jdbc_url = f"jdbc:postgresql://{rest}"
+        return jdbc_url, user, password
+
+    raise RuntimeError(
+        "SEGURIDAD: Faltan credenciales de base de datos para el Job Spark. "
+        "Configure el Secret backend-db-secret (DATABASE_URL) o proporcione JDBC_URL, DB_USER y DB_PASSWORD."
+    )
+
+
 def guardar(df, tabla, opciones):
     (
         df.write.format("jdbc")
@@ -135,11 +166,11 @@ def guardar(df, tabla, opciones):
         .mode("overwrite")
         .save()
     )
- 
- 
+
+
 def main():
-    url = os.environ["JDBC_URL"]
-    opciones = _opciones_jdbc(url, os.environ["DB_USER"], os.environ["DB_PASSWORD"])
+    url, usuario, clave = obtener_credenciales_bd()
+    opciones = _opciones_jdbc(url, usuario, clave)
  
     spark = (
         SparkSession.builder.appName("minimarket-ventas-spark")

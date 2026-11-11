@@ -1,7 +1,8 @@
-# Dockerfile — Spark Job Runner
+# Dockerfile — Spark Job Runner (Entorno local y pruebas)
 # MiniMarket Cloud | Integrante 3 — Datos y Procesamiento Distribuido
 #
 # Imagen multi-etapa basada en Python 3.11 + PySpark 3.5
+# Compatible con arquitecturas AMD64 y Apple Silicon ARM64.
 # Incluye el driver JDBC de PostgreSQL para conectar Spark con la BD.
 
 FROM python:3.11-slim-bookworm AS base
@@ -11,9 +12,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         openjdk-17-jre-headless \
         curl \
         wget \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    && JAVA_DIR=$(find /usr/lib/jvm -maxdepth 1 -name "java-17-openjdk*" | head -n 1) \
+    && ln -s "$JAVA_DIR" /usr/lib/jvm/java-17-openjdk-current
 
-ENV JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
+ENV JAVA_HOME=/usr/lib/jvm/java-17-openjdk-current
 ENV PATH="$JAVA_HOME/bin:$PATH"
 
 WORKDIR /app
@@ -22,7 +25,7 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Descargar driver JDBC de PostgreSQL (requerido por Spark para leer/escribir en PG)
+# Descargar driver JDBC de PostgreSQL
 RUN mkdir -p /opt/spark/jars && \
     wget -q https://jdbc.postgresql.org/download/postgresql-42.7.3.jar \
          -O /opt/spark/jars/postgresql-42.7.3.jar
@@ -30,10 +33,9 @@ RUN mkdir -p /opt/spark/jars && \
 # Copiar los jobs
 COPY jobs/ ./jobs/
 
-# Variables de entorno por defecto (sobreescribibles en docker-compose)
-ENV DATABASE_URL="postgresql://minimarket_user:minimarket_password@postgres:5432/minimarket_db"
+# Variables de entorno por defecto (sin credenciales incrustadas)
 ENV SPARK_MASTER="local[*]"
 ENV PYTHONUNBUFFERED=1
 
-# El job por defecto a ejecutar (se puede sobreescribir con CMD en compose)
+# El job por defecto a ejecutar
 CMD ["python", "jobs/analisis_ventas.py"]

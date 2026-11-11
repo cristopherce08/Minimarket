@@ -151,4 +151,21 @@ def test_reportes_en_vivo_siguen_funcionando(agg_tables, reportes_client):
     res = reportes_client.get("/api/v1/reportes/resumen-general")
     assert res.status_code == 200
     assert res.json()["total_ventas_historicas"] == 0
+
+
+def test_spark_sin_tablas_agg_no_lanza_500(db, reportes_client):
+    """
+    Seguridad y Resiliencia: Si las tablas agg_* aún no han sido creadas
+    (ej. migración 002 pendiente), la API responde HTTP 200 con disponible=False
+    en lugar de fallar con HTTP 500.
+    """
+    for t in TABLAS:
+        db.execute(text(f"DROP TABLE IF EXISTS {t} CASCADE;"))
+    db.commit()
+
+    res = reportes_client.get("/api/v1/reportes/spark")
+    assert res.status_code == 200
+    data = res.json()
+    assert data["disponible"] is False
+
  

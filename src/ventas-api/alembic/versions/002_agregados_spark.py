@@ -56,6 +56,6 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.drop_table("agg_resumen_general")
-    op.drop_table("agg_productos_top")
-    op.drop_table("agg_ventas_diarias")
+    op.execute(sa.text("DROP TABLE IF EXISTS agg_resumen_general CASCADE;"))
+    op.execute(sa.text("DROP TABLE IF EXISTS agg_productos_top CASCADE;"))
+    op.execute(sa.text("DROP TABLE IF EXISTS agg_ventas_diarias CASCADE;"))

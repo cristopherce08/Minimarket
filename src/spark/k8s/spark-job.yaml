@@ -33,21 +33,11 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: status.podIP
-            - name: JDBC_URL
+            - name: DATABASE_URL
               valueFrom:
                 secretKeyRef:
-                  name: spark-db-secret
-                  key: JDBC_URL
-            - name: DB_USER
-              valueFrom:
-                secretKeyRef:
-                  name: spark-db-secret
-                  key: DB_USER
-            - name: DB_PASSWORD
-              valueFrom:
-                secretKeyRef:
-                  name: spark-db-secret
-                  key: DB_PASSWORD
+                  name: backend-db-secret
+                  key: DATABASE_URL
             - name: NUM_VENTAS
               value: "200000"
             - name: NUM_PARTICIONES

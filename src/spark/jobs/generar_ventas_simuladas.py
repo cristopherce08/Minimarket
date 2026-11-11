@@ -32,10 +32,9 @@ logging.basicConfig(
 )
 logger = logging.getLogger("generar_ventas_simuladas")
 
-DATABASE_URL = os.getenv(
-    "DATABASE_URL",
-    "postgresql://minimarket_user:minimarket_password@localhost:5433/minimarket_db",
-)
+DATABASE_URL = os.getenv("DATABASE_URL")
+if not DATABASE_URL:
+    raise RuntimeError("Variable de entorno DATABASE_URL no configurada para generar_ventas_simuladas.")
 
 NUM_VENTAS      = 500   # Total de ventas a generar
 MAX_ITEMS_VENTA = 5     # Máximo de productos distintos por venta

@@ -305,9 +305,13 @@ def get_resultados_spark(
             ],
         )
     except Exception as e:
+        err_msg = str(e).lower()
+        if "does not exist" in err_msg or "no existe" in err_msg or "agg_" in err_msg:
+            logger.warning(f"Tablas de analítica Spark no disponibles aún ({e}). Retornando disponible=False.")
+            return SparkResultadosResponse(disponible=False)
         logger.error(f"Error al leer resultados de Spark: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Error al obtener los resultados de Spark. Verifica que la migración 002 esté aplicada.",
+            detail="Error interno al consultar resultados de analítica Spark.",
         )
  
