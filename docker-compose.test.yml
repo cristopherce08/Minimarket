@@ -1,0 +1,29 @@
+# ==============================================================================
+# MiniMarket Cloud — Base de Datos de Pruebas Aislada (PostgreSQL)
+# Rúbrica UTP: Pruebas Automatizadas de Concurrencia y Transacciones ACID
+# ==============================================================================
+# IMPORTANTE:
+# - Puerto 5434: Completamente independiente del entorno de desarrollo (5433) y K8s (5432)
+# - Base minimarket_test_db: Exclusiva para pruebas automatizadas (DELETE / ROLLBACK)
+# - tmpfs en RAM: Almacenamiento efímero, máxima velocidad y cero riesgo para datos reales
+# ==============================================================================
+version: '3.8'
+
+services:
+  postgres-test:
+    image: postgres:16-alpine
+    container_name: minimarket_postgres_test
+    environment:
+      POSTGRES_USER: ${TEST_DB_USER:-test_user}
+      POSTGRES_PASSWORD: ${TEST_DB_PASSWORD:-test_password}
+      POSTGRES_DB: minimarket_test_db
+    ports:
+      - "5434:5432"
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${TEST_DB_USER:-test_user} -d minimarket_test_db"]
+      interval: 3s
+      timeout: 3s
+      retries: 5
+    restart: "no"
