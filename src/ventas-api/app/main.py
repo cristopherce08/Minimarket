@@ -50,6 +50,7 @@ app = FastAPI(
     description="Microservicio transaccional de ventas, catálogo e inventario para MiniMarket Cloud.",
     lifespan=lifespan,
 )
+app.add_middleware(PrometheusMiddleware)
 
 
 # -------------------------------------------------------------
