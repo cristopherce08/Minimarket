@@ -19,25 +19,40 @@ from app.models import Base
 from app.database import get_db as ventas_get_db
 from app.main import app as ventas_app
 
-# Intentar conectar a PostgreSQL local (puerto 5433); si no está disponible, usar SQLite en memoria
-PG_URL = os.getenv(
-    "TEST_DATABASE_URL",
+# URLs candidatas para base de datos de pruebas (PostgreSQL independiente vs SQLite fallback)
+PG_CANDIDATE_URLS = [
+    os.getenv("TEST_DATABASE_URL"),
+    "postgresql+psycopg://test_user:test_password@localhost:5434/minimarket_test_db",
     "postgresql+psycopg://minimarket_user:minimarket_password@localhost:5433/minimarket_db",
-)
+]
 
 def init_test_engine():
-    try:
-        eng = create_engine(PG_URL, pool_pre_ping=True, pool_size=20, max_overflow=10)
-        with eng.connect() as conn:
-            conn.execute(text("SELECT 1"))
-        return eng, "postgresql"
-    except Exception:
-        eng = create_engine(
-            "sqlite:///:memory:",
-            connect_args={"check_same_thread": False, "timeout": 20},
-            poolclass=StaticPool,
-        )
-        return eng, "sqlite"
+    # 1. Probar conexiones PostgreSQL reales independientes
+    for url in PG_CANDIDATE_URLS:
+        if not url:
+            continue
+        try:
+            eng = create_engine(url, pool_pre_ping=True, pool_size=20, max_overflow=10)
+            with eng.connect() as conn:
+                conn.execute(text("SELECT 1"))
+            return eng, "postgresql"
+        except Exception:
+            continue
+
+    # 2. Fallback a SQLite en archivo temporal con modo WAL para permitir concurrencia en pruebas aisladas
+    import tempfile
+    from sqlalchemy.pool import NullPool
+    
+    sqlite_path = os.path.join(tempfile.gettempdir(), "minimarket_test_isolated.db")
+    eng = create_engine(
+        f"sqlite:///{sqlite_path}",
+        poolclass=NullPool,
+        connect_args={"check_same_thread": False, "timeout": 30},
+    )
+    with eng.connect() as conn:
+        conn.execute(text("PRAGMA journal_mode=WAL;"))
+        conn.execute(text("PRAGMA busy_timeout=30000;"))
+    return eng, "sqlite"
 
 
 engine_test, DB_DIALECT = init_test_engine()
