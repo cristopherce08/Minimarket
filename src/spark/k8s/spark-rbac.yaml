@@ -1,0 +1,40 @@
+# ==============================================================================
+# MiniMarket Cloud - Permisos para que el driver de Spark cree ejecutores
+# Namespace: minimarket-backend
+# ==============================================================================
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: spark
+  namespace: minimarket-backend
+  labels:
+    app.kubernetes.io/part-of: minimarket-cloud
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: spark-role
+  namespace: minimarket-backend
+  labels:
+    app.kubernetes.io/part-of: minimarket-cloud
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "services", "configmaps"]
+    verbs: ["create", "get", "list", "watch", "update", "patch", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: spark-role-binding
+  namespace: minimarket-backend
+  labels:
+    app.kubernetes.io/part-of: minimarket-cloud
+subjects:
+  - kind: ServiceAccount
+    name: spark
+    namespace: minimarket-backend
+roleRef:
+  kind: Role
+  name: spark-role
+  apiGroup: rbac.authorization.k8s.io
+ 

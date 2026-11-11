@@ -12,6 +12,9 @@ spec:
   accessModes:
     - {{ .Values.postgresql.persistence.accessMode }}
   storageClassName: {{ .Values.postgresql.persistence.storageClass }}
+    {{- if .Values.postgresql.persistence.pv.enabled }}
+  volumeName: {{ .Values.postgresql.persistence.pv.name }}
+  {{- end }}
   resources:
     requests:
       storage: {{ .Values.postgresql.persistence.size }}

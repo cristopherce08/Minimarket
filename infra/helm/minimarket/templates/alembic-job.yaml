@@ -1,0 +1,38 @@
+{{- if .Values.migrations.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: alembic-migration
+  namespace: {{ .Values.global.namespaces.backend }}
+  labels:
+    app: alembic-migration
+    tier: backend
+    {{- include "minimarket.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "1"
+    "helm.sh/hook-delete-policy": before-hook-creation
+spec:
+  backoffLimit: 3
+  template:
+    metadata:
+      labels:
+        app: alembic-migration
+        tier: backend
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: alembic-upgrade
+          image: "{{ .Values.ventasApi.image.repository }}:{{ .Values.ventasApi.image.tag }}"
+          imagePullPolicy: {{ .Values.ventasApi.image.pullPolicy }}
+          command: ["alembic", "-c", "alembic.ini", "upgrade", "head"]
+          envFrom:
+            - configMapRef:
+                name: backend-config
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.backend.existingSecret | default "backend-db-secret" }}
+                  key: DATABASE_URL
+{{- end }}

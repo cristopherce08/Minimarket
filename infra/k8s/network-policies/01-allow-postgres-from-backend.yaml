@@ -23,7 +23,7 @@ spec:
             matchExpressions:
               - key: app
                 operator: In
-                values: ["ventas-api", "reportes-api", "spark-job"]
+                values: ["ventas-api", "reportes-api", "spark-job", "alembic-migration"]
       ports:
         - protocol: TCP
           port: 5432

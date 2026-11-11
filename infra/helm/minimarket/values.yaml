@@ -32,6 +32,10 @@ postgresql:
     storageClass: "standard"
     accessMode: ReadWriteOnce
     size: 2Gi
+    pv:
+      enabled: false
+      name: postgres-pv
+      hostPath: /data/minimarket-postgres
   auth:
     database: minimarket_db
     username: minimarket_user
@@ -166,3 +170,10 @@ frontend:
     limits:
       cpu: 200m
       memory: 128Mi
+
+# -------------------------------------------------------------
+# Migraciones de base de datos Alembic (namespace: minimarket-backend)
+# -------------------------------------------------------------
+migrations:
+  enabled: true
+

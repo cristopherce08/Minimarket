@@ -18,6 +18,8 @@ BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 VENTAS_PATH = os.path.join(BASE_DIR, "src", "ventas-api")
 REPORTES_APP_DIR = os.path.join(BASE_DIR, "src", "reportes-api", "app")
 
+if BASE_DIR not in sys.path:
+    sys.path.insert(0, BASE_DIR)
 if VENTAS_PATH not in sys.path:
     sys.path.insert(0, VENTAS_PATH)
 
@@ -296,9 +298,21 @@ def db():
         session.execute(text("DELETE FROM sale_items;"))
         session.execute(text("DELETE FROM sales;"))
         session.execute(text("DELETE FROM products;"))
+
+        for t in ["agg_productos_top", "agg_resumen_general", "agg_ventas_diarias"]:
+            if DB_DIALECT == "postgresql":
+                exists = session.execute(
+                    text("SELECT to_regclass(:t) IS NOT NULL;"), {"t": f"public.{t}"}
+                ).scalar()
+            else:
+                exists = True
+            if exists:
+                session.execute(text(f"DELETE FROM {t};"))
+
         session.commit()
-    except Exception:
+    except Exception as e:
         session.rollback()
+        logger.warning(f"Error limpiando tablas de prueba: {e}")
 
     try:
         yield session
