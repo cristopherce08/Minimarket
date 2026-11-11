@@ -3,13 +3,25 @@ from sqlalchemy.orm import declarative_base, sessionmaker
 from .config import settings
 
 connect_args = {}
+engine_kwargs = {
+    "pool_pre_ping": True,
+}
+
 if settings.DATABASE_URL.startswith("sqlite"):
     connect_args = {"check_same_thread": False}
+else:
+    # Optimización de pool para escalamiento horizontal con múltiples réplicas HPA
+    engine_kwargs.update({
+        "pool_size": 10,
+        "max_overflow": 20,
+        "pool_recycle": 1800,
+        "pool_timeout": 30,
+    })
 
 engine = create_engine(
     settings.DATABASE_URL,
     connect_args=connect_args,
-    pool_pre_ping=True,
+    **engine_kwargs,
 )
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
