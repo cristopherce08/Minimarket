@@ -18,8 +18,10 @@
    - **Actualización Condicional Atómica:** `UPDATE products SET stock = stock - qty WHERE id = :id AND stock >= :qty`. Si el stock fue consumido por otra transacción simultánea, `rowcount == 0` y la transacción se aborta con `ROLLBACK` total y código de estado `HTTP 400 Bad Request`.
    - **Captura de Precio Histórico:** Cada ítem vendido almacena el precio unitario exacto al momento de la confirmación (`unit_price`), garantizando trazabilidad contable inmutable.
 
-3. **Pool de Conexiones Optimizado:**  
-   Se configuró el pool de SQLAlchemy (`pool_size=10`, `max_overflow=20`, `pool_recycle=1800`, `pool_pre_ping=True`) para soportar alta concurrencia por pod y reciclar conexiones inactivas.
+3. **Pool de Conexiones Calibrado para `max_connections=100`:**  
+   Se calibró el pool de SQLAlchemy (`pool_size=5`, `max_overflow=5`, `pool_recycle=1800`, `pool_timeout=30`, `pool_pre_ping=True`) parametrizado vía variables de entorno (`DB_POOL_SIZE`, `DB_MAX_OVERFLOW`).  
+   - Con 5 réplicas HPA máximas: `5 pods * (5 pool + 5 overflow) = 50 conexiones máximas`.  
+   - Deja 50 conexiones libres en PostgreSQL para `reportes-api` (10), PySpark JDBC (20) y conexiones administrativas/probes Kubelet (20), garantizando que nunca se sature el límite global de 100 conexiones.
 
 4. **Apagado Ordenado (*Graceful Shutdown*):**  
    - En el despliegue de Kubernetes se configuró `terminationGracePeriodSeconds: 30`.

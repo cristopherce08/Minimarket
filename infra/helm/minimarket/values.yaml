@@ -63,6 +63,8 @@ ventasApi:
     APP_PORT: "8000"
     LOW_STOCK_THRESHOLD: "5"
     CORS_ORIGINS: "*"
+    DB_POOL_SIZE: "5"
+    DB_MAX_OVERFLOW: "5"
     # NOTA: DATABASE_URL se inyecta de forma segura desde el Secret backend-db-secret
   resources:
     requests:

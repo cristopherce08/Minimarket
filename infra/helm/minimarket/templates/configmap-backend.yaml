@@ -9,3 +9,5 @@ data:
   APP_ENV: {{ .Values.global.environment | quote }}
   LOW_STOCK_THRESHOLD: {{ .Values.ventasApi.env.LOW_STOCK_THRESHOLD | quote }}
   CORS_ORIGINS: {{ .Values.ventasApi.env.CORS_ORIGINS | quote }}
+  DB_POOL_SIZE: {{ .Values.ventasApi.env.DB_POOL_SIZE | default "5" | quote }}
+  DB_MAX_OVERFLOW: {{ .Values.ventasApi.env.DB_MAX_OVERFLOW | default "5" | quote }}

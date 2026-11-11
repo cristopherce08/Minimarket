@@ -17,15 +17,20 @@
 
 ## 2. Comandos en Vivo para la Demostración
 
-### Paso 1: Mostrar las Pruebas Automatizadas de Concurrencia y ACID
+### Paso 1: Mostrar las Pruebas Automatizadas de Aislamiento, Concurrencia y ACID
 ```bash
-.venv/bin/pytest tests/test_sales.py -v
+# Levantar PostgreSQL de pruebas aislado en RAM (puerto 5434)
+docker compose -f docker-compose.test.yml up -d
+
+# Ejecutar la suite completa de 18 pruebas automatizadas
+TEST_DATABASE_URL="postgresql+psycopg://test_user:test_password@localhost:5434/minimarket_test_db" .venv/bin/pytest tests/ -v
 ```
 *Qué explicar:*  
-Demostrar que las pruebas unitarias y de integración concurrentes (`test_prevent_overselling_concurrency`, `test_concurrent_multi_product_sales_no_deadlock` y `test_high_concurrency_exact_inventory_accounting`) validan que bajo solicitudes simultáneas:
-1. El stock nunca cae por debajo de 0.
-2. Exactamente la cantidad disponible se vende (HTTP 201) y el excedente se rechaza limpiamente con HTTP 400.
-3. Se previenen deadlocks al bloquear filas en orden ascendente por ID.
+1. Demostrar la protección de datos: la suite rechaza categóricamente cualquier intento de conexión a la base de desarrollo `minimarket_db` mediante aserciones de seguridad en `tests/conftest.py` y `tests/test_database_isolation.py`.
+2. Validar que las pruebas unitarias y de integración concurrentes (`test_prevent_overselling_concurrency`, `test_concurrent_multi_product_sales_no_deadlock` y `test_high_concurrency_exact_inventory_accounting`) operan sobre una base efímera en `tmpfs`, garantizando que:
+   - El stock nunca cae por debajo de 0.
+   - Exactamente la cantidad disponible se vende (HTTP 201) y el excedente se rechaza limpiamente con HTTP 400.
+   - Se previenen deadlocks al bloquear filas en orden ascendente por ID.
 
 ### Paso 2: Mostrar el Estado del HPA y Metrics Server en Kubernetes
 ```bash
