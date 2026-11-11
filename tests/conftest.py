@@ -3,6 +3,7 @@ import sys
 import types
 import importlib.util
 import logging
+import re
 import tempfile
 import pytest
 from sqlalchemy import create_engine, text
@@ -40,6 +41,31 @@ AUTHORIZED_TEST_DATABASES = frozenset([
 
 # Puerto reservado exclusivamente para la base de datos de desarrollo
 FORBIDDEN_PORTS = frozenset([5433])
+
+
+def sanitize_url(url_or_str: str) -> str:
+    """Oculta contraseñas y credenciales sensibles de cualquier URL de base de datos."""
+    if not url_or_str:
+        return ""
+    try:
+        u = make_url(url_or_str)
+        return u.render_as_string(hide_password=True)
+    except Exception:
+        return re.sub(r":([^/@:]+)@", ":***@", str(url_or_str))
+
+
+def sanitize_error_message(err: Exception, raw_url: str = None) -> str:
+    """Enmascara contraseñas y secretos dentro de los mensajes de excepción."""
+    err_str = str(err)
+    if raw_url:
+        try:
+            parsed = make_url(raw_url)
+            if parsed.password:
+                err_str = err_str.replace(parsed.password, "***")
+        except Exception:
+            pass
+    err_str = re.sub(r":([^/@:\s]+)@", ":***@", err_str)
+    return err_str
 
 
 def validate_test_database_target(url_str: str) -> None:
@@ -113,19 +139,24 @@ DEFAULT_POSTGRES_TEST_URL = os.getenv(
 )
 
 
-def init_test_engine(custom_url: str = None, force_sqlite: bool = False):
+def init_test_engine(custom_url: str = None, force_sqlite: bool = False, set_env: bool = None):
     """
     Inicializa el motor de pruebas con comportamiento fail-closed:
     - Si force_sqlite o USE_SQLITE_UNIT_TESTS=1, inicializa SQLite aislado para unit tests.
     - De lo contrario, exige PostgreSQL de pruebas en localhost:5434 (minimarket_test_db).
       Si no responde, falla con mensaje explícito sin fallback silencioso a SQLite.
+    - Oculta contraseñas y secretos en mensajes de error y registros.
     """
+    if set_env is None:
+        set_env = (custom_url is None and not force_sqlite)
+
     is_sqlite = force_sqlite or USE_SQLITE_FLAG
     if is_sqlite:
         sqlite_path = os.path.join(tempfile.gettempdir(), "minimarket_test_isolated.db")
         sqlite_url = f"sqlite:///{sqlite_path}"
         validate_test_database_target(sqlite_url)
-        os.environ["DATABASE_URL"] = sqlite_url
+        if set_env:
+            os.environ["DATABASE_URL"] = sqlite_url
 
         eng = create_engine(
             sqlite_url,
@@ -135,15 +166,16 @@ def init_test_engine(custom_url: str = None, force_sqlite: bool = False):
         with eng.connect() as conn:
             conn.execute(text("PRAGMA journal_mode=WAL;"))
             conn.execute(text("PRAGMA busy_timeout=30000;"))
-        print(f"\n[TEST ENVIRONMENT] Modo Unitario Explícito: SQLite (WAL) | Archivo: {sqlite_path}")
+        if set_env:
+            print(f"\n[TEST ENVIRONMENT] Modo Unitario Explícito: SQLite (WAL) | Archivo: {sqlite_path}")
         return eng, "sqlite", sqlite_url
 
     # Modo Integración PostgreSQL (Fail-Closed)
     test_url = custom_url or os.getenv("TEST_DATABASE_URL", DEFAULT_POSTGRES_TEST_URL)
     validate_test_database_target(test_url)
 
-    # Pre-configurar DATABASE_URL en el entorno ANTES de cualquier importación de aplicación
-    os.environ["DATABASE_URL"] = test_url
+    if set_env:
+        os.environ["DATABASE_URL"] = test_url
 
     try:
         eng = create_engine(test_url, pool_pre_ping=True, pool_size=10, max_overflow=5)
@@ -151,17 +183,20 @@ def init_test_engine(custom_url: str = None, force_sqlite: bool = False):
             conn.execute(text("SELECT 1;"))
             assert_connected_database_is_safe(conn)
         safe_display_url = eng.url.render_as_string(hide_password=True)
-        print(f"\n[TEST ENVIRONMENT] Motor: PostgreSQL | Base autorizada: {safe_display_url}")
+        if set_env:
+            print(f"\n[TEST ENVIRONMENT] Motor: PostgreSQL | Base autorizada: {safe_display_url}")
         return eng, "postgresql", test_url
     except Exception as e:
         if "SEGURIDAD CRÍTICA" in str(e) or "INTERCEPCIÓN" in str(e):
             raise
-        # Fail-Closed: Mensaje claro con instrucciones precisas para levantar el entorno
+        # Fail-Closed: Mensaje sanitizado con instrucciones precisas para levantar el entorno
+        safe_url_text = sanitize_url(test_url)
+        safe_error_text = sanitize_error_message(e, test_url)
         raise RuntimeError(
             "\n" + "=" * 80 + "\n"
             "FALLO DE CONEXIÓN AL POSTGRESQL DE PRUEBAS (COMPORTAMIENTO FAIL-CLOSED):\n"
-            f"No fue posible conectar a la base de pruebas autorizada: {test_url}\n"
-            f"Error reportado: {e}\n\n"
+            f"No fue posible conectar a la base de pruebas autorizada: {safe_url_text}\n"
+            f"Error reportado: {safe_error_text}\n\n"
             "Las pruebas de integración y concurrencia requieren PostgreSQL de pruebas.\n"
             "El fallback silencioso a SQLite está deshabilitado para evitar falsos positivos.\n\n"
             "Para iniciar la instancia PostgreSQL de pruebas en RAM (puerto 5434), ejecute:\n"
@@ -169,11 +204,11 @@ def init_test_engine(custom_url: str = None, force_sqlite: bool = False):
             "Para ejecutar únicamente pruebas unitarias con SQLite, defina:\n"
             "    export USE_SQLITE_UNIT_TESTS=1\n"
             + "=" * 80
-        ) from e
+        ) from None
 
 
 # 1. Inicializar motor y fijar DATABASE_URL en os.environ antes de importar modelos o apps
-engine_test, DB_DIALECT, ACTIVE_TEST_DB_URL = init_test_engine()
+engine_test, DB_DIALECT, ACTIVE_TEST_DB_URL = init_test_engine(set_env=True)
 TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine_test)
 
 # 2. AHORA importar los módulos de ventas-api (ya con DATABASE_URL apuntando a la base de prueba)
@@ -222,6 +257,32 @@ Base.metadata.create_all(bind=engine_test)
 # ==============================================================================
 # FIXTURES PYTEST
 # ==============================================================================
+@pytest.fixture(autouse=True)
+def preserve_test_environment():
+    """
+    Garantiza que ninguna prueba altere permanentemente las variables de entorno
+    críticas (DATABASE_URL, TEST_DATABASE_URL, USE_SQLITE_UNIT_TESTS).
+    """
+    initial_db_url = os.environ.get("DATABASE_URL")
+    initial_test_url = os.environ.get("TEST_DATABASE_URL")
+    initial_sqlite_flag = os.environ.get("USE_SQLITE_UNIT_TESTS")
+    yield
+    if initial_db_url is not None:
+        os.environ["DATABASE_URL"] = initial_db_url
+    else:
+        os.environ.pop("DATABASE_URL", None)
+
+    if initial_test_url is not None:
+        os.environ["TEST_DATABASE_URL"] = initial_test_url
+    else:
+        os.environ.pop("TEST_DATABASE_URL", None)
+
+    if initial_sqlite_flag is not None:
+        os.environ["USE_SQLITE_UNIT_TESTS"] = initial_sqlite_flag
+    else:
+        os.environ.pop("USE_SQLITE_UNIT_TESTS", None)
+
+
 @pytest.fixture(scope="function")
 def db():
     """Limpia las tablas y entrega una sesión lista para cada prueba en la base de tests."""

@@ -1,9 +1,13 @@
 """
-Pruebas de Seguridad y Aislamiento Estricto de Base de Datos
-Garantiza que la suite de pruebas rechace cualquier conexión a la base de desarrollo minimarket_db (puerto 5433),
-que todos los motores SQLAlchemy en memoria apunten exclusivamente a minimarket_test_db (puerto 5434),
-y que el sistema opere en modo Fail-Closed sin fallback silencioso a SQLite para integración.
+Pruebas de Seguridad, Aislamiento y No Polución del Entorno
+Garantiza que la suite de pruebas:
+1. Rechace cualquier conexión a la base de desarrollo minimarket_db (puerto 5433).
+2. Oculte contraseñas y secretos en mensajes de error y URLs de conexión.
+3. No deje modificaciones persistentes en os.environ["DATABASE_URL"] usando monkeypatch.
+4. Mantenga el comportamiento Fail-Closed sin fallback silencioso para integración.
+5. Verifique que todos los motores SQLAlchemy en memoria apunten a minimarket_test_db.
 """
+import os
 import sys
 import pytest
 from sqlalchemy import text
@@ -11,9 +15,12 @@ from conftest import (
     validate_test_database_target,
     assert_connected_database_is_safe,
     init_test_engine,
+    sanitize_url,
+    sanitize_error_message,
     FORBIDDEN_DATABASES,
     AUTHORIZED_TEST_DATABASES,
     FORBIDDEN_PORTS,
+    ACTIVE_TEST_DB_URL,
     engine_test,
     DB_DIALECT,
 )
@@ -115,12 +122,9 @@ def test_all_in_memory_engines_point_to_test_database():
     for name, eng in engines_to_check.items():
         assert eng is not None, f"{name} no debe ser None"
         eng_url = eng.url
-        # Comprobar que no apunta al puerto 5433 de desarrollo
         assert eng_url.port != 5433, f"PELIGRO: {name} apunta al puerto 5433 de desarrollo!"
-        # Comprobar que la base no es minimarket_db
         db_name = (eng_url.database or "").strip().lower()
         assert db_name != "minimarket_db", f"PELIGRO: {name} apunta a la base minimarket_db!"
-        # Comprobar que apunta a la base de pruebas autorizada
         if DB_DIALECT == "postgresql":
             assert db_name == "minimarket_test_db", f"{name} debe apuntar a minimarket_test_db, no a {db_name}"
             assert eng_url.port == 5434, f"{name} debe usar el puerto 5434 de pruebas"
@@ -128,29 +132,45 @@ def test_all_in_memory_engines_point_to_test_database():
             assert "test" in db_name or "tmp" in db_name or db_name == ":memory:"
 
 
-def test_fail_closed_when_postgres_unreachable():
+def test_fail_closed_and_hide_secrets_when_postgres_unreachable(monkeypatch):
     """
-    Seguridad 6: Comportamiento Fail-Closed.
-    Si la instancia PostgreSQL de pruebas no responde (por ejemplo, puerto cerrado 5439),
-    init_test_engine() DEBE fallar inmediatamente con RuntimeError explicativo,
-    y NO debe realizar fallback silencioso a SQLite.
+    Seguridad 6: Comportamiento Fail-Closed y Ocultamiento de Secretos.
+    Verifica que:
+    1. Si PostgreSQL no responde, falla con RuntimeError fail-closed.
+    2. Las contraseñas en la URL NO se expongan en el mensaje de error ni traceback.
+    3. Usando monkeypatch, el entorno os.environ quede completamente protegido contra polución.
     """
-    unreachable_url = "postgresql+psycopg://test_user:test_password@localhost:5439/minimarket_test_db"
+    secret_pass = "super_secret_isolated_pass_xyz123"
+    unreachable_url = f"postgresql+psycopg://test_user:{secret_pass}@localhost:5439/minimarket_test_db"
+    
+    # Simular cambio de entorno aislado con monkeypatch
+    monkeypatch.setenv("TEST_DATABASE_URL", unreachable_url)
+
     with pytest.raises(RuntimeError) as exc_info:
         init_test_engine(custom_url=unreachable_url, force_sqlite=False)
 
     err_text = str(exc_info.value)
+    # 1. Comportamiento Fail-Closed verificado
     assert "FALLO DE CONEXIÓN AL POSTGRESQL DE PRUEBAS (COMPORTAMIENTO FAIL-CLOSED)" in err_text
     assert "docker compose -f docker-compose.test.yml up -d" in err_text
     assert "El fallback silencioso a SQLite está deshabilitado" in err_text
 
+    # 2. Ocultamiento de secretos verificado
+    assert secret_pass not in err_text, "VULNERABILIDAD: La contraseña se expuso en el mensaje de error!"
+    assert "***" in err_text, "La contraseña debió enmascararse como ***"
 
-def test_explicit_sqlite_unit_test_mode():
+    # 3. Comprobar que os.environ["DATABASE_URL"] no fue alterado persistentemente
+    assert os.environ.get("DATABASE_URL") == ACTIVE_TEST_DB_URL
+
+
+def test_explicit_sqlite_unit_test_mode(monkeypatch):
     """
-    Seguridad 7: Modo Unitario Explícito SQLite.
+    Seguridad 7: Modo Unitario Explícito SQLite con monkeypatch.
     Demostrar que SQLite solo se inicializa cuando se solicita explícitamente,
-    usando un archivo temporal seguro en /tmp/ con modo WAL.
+    usando un archivo temporal seguro en /tmp/ con modo WAL, y sin contaminar
+    el entorno de integración general.
     """
+    monkeypatch.setenv("USE_SQLITE_UNIT_TESTS", "1")
     sqlite_eng, dialect, url = init_test_engine(force_sqlite=True)
     try:
         assert dialect == "sqlite"
@@ -161,10 +181,28 @@ def test_explicit_sqlite_unit_test_mode():
     finally:
         sqlite_eng.dispose()
 
+    # Verificar que el entorno general sigue apuntando a la base activa
+    assert os.environ.get("DATABASE_URL") == ACTIVE_TEST_DB_URL
+
+
+def test_sanitizers_mask_passwords():
+    """
+    Seguridad 8: Validación unitaria de las funciones sanitizadoras de credenciales.
+    """
+    raw_url = "postgresql+psycopg://admin_user:P@ssw0rd!#123@db.internal:5432/minimarket_test_db"
+    safe = sanitize_url(raw_url)
+    assert "P@ssw0rd!#123" not in safe
+    assert "***" in safe
+
+    simulated_err = Exception("Connection to server failed for user admin_user:P@ssw0rd!#123 at host")
+    safe_err = sanitize_error_message(simulated_err, raw_url)
+    assert "P@ssw0rd!#123" not in safe_err
+    assert "***" in safe_err
+
 
 def test_live_engine_is_not_connected_to_development():
     """
-    Seguridad 8: Demostrar en vivo que la conexión activa contra el motor actual
+    Seguridad 9: Demostrar en vivo que la conexión activa contra el motor actual
     está conectada a la base autorizada minimarket_test_db.
     """
     with engine_test.connect() as conn:
