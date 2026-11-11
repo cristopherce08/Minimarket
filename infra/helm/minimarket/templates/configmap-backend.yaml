@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: backend-config
+  namespace: {{ .Values.global.namespaces.backend }}
+  labels:
+    {{- include "minimarket.labels" . | nindent 4 }}
+data:
+  APP_ENV: {{ .Values.global.environment | quote }}
+  LOW_STOCK_THRESHOLD: {{ .Values.ventasApi.env.LOW_STOCK_THRESHOLD | quote }}
+  CORS_ORIGINS: {{ .Values.ventasApi.env.CORS_ORIGINS | quote }}

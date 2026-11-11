@@ -1,0 +1,84 @@
+#cloud-config
+# ==============================================================================
+# MiniMarket Cloud — Cloud-init Provisioning para VM Ubuntu ARM64 (Multipass)
+# Integrante 1: Infraestructura y Redes
+# ==============================================================================
+
+hostname: minimarket-vm
+fqdn: minimarket-vm.local
+manage_etc_hosts: true
+
+# Actualización inicial del sistema
+package_update: true
+package_upgrade: false
+
+# Paquetes base y herramientas de diagnóstico de red
+packages:
+  - curl
+  - wget
+  - git
+  - net-tools
+  - iputils-ping
+  - dnsutils
+  - traceroute
+  - tcpdump
+  - iperf3
+  - jq
+  - htop
+  - ca-certificates
+
+# Creación de usuario administrador de infraestructura
+# Autenticación segura: contraseña bloqueada para prevenir accesos no autenticados en consola
+users:
+  - default
+  - name: cloud-admin
+    gecos: Administrador Cloud MiniMarket
+    sudo: ALL=(ALL) NOPASSWD:ALL
+    groups: [sudo, adm]
+    shell: /bin/bash
+    lock_passwd: true
+
+# Configuración de archivos locales en la VM
+write_files:
+  - path: /etc/motd
+    content: |
+      ======================================================================
+        MINIMARKET CLOUD — Nodo Bastion / Jumpbox Ubuntu ARM64
+        Curso: Servicios Cloud (UTP)
+        Entorno: Multipass VM Aislada
+        Arquitectura: Linux ARM64 (Ubuntu 24.04 LTS)
+      ======================================================================
+
+  - path: /home/cloud-admin/test-connectivity.sh
+    content: |
+      #!/usr/bin/env bash
+      set -euo pipefail
+      echo "=== Diagnóstico de Red de la VM Ubuntu ==="
+      echo "IP Local de la VM:"
+      ip -br addr show
+      echo ""
+      echo "Prueba de conectividad a Internet (Ping a 8.8.8.8):"
+      ping -c 3 8.8.8.8 || echo "Ping fallido"
+      echo ""
+      echo "Resolución de nombres DNS (google.com):"
+      getent hosts google.com || echo "DNS fallido"
+      echo ""
+      echo "Verificación de herramientas de red instaladas:"
+      for tool in curl wget ip dig iperf3 tcpdump traceroute; do
+        if which $tool > /dev/null 2>&1; then
+          echo "  [OK] $tool instalado"
+        else
+          echo "  [MISSING] $tool no encontrado"
+        fi
+      done
+    owner: cloud-admin:cloud-admin
+    defer: true
+
+# Comandos de post-instalación
+# NOTA DE SEGURIDAD Y SINTAXIS: Cada comando debe ir entre comillas para evitar
+# que secuencias como ': ' sean interpretadas como mapeos YAML inválidos.
+# Los permisos ejecutables se asignan aquí para evitar conversiones de tipo en Multipass.
+runcmd:
+  - 'echo "MiniMarket Cloud-Init completado exitosamente: $(date)" >> /var/log/cloud-init-minimarket.log'
+  - 'chmod 0755 /home/cloud-admin/test-connectivity.sh'
+  - 'chown -R cloud-admin:cloud-admin /home/cloud-admin'

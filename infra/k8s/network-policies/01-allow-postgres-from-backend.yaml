@@ -1,0 +1,29 @@
+# ==============================================================================
+# MiniMarket Cloud — NetworkPolicy: Autorizar acceso a PostgreSQL SOLO desde Backend
+# ==============================================================================
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-postgres-from-backend
+  namespace: minimarket-data
+  labels:
+    app.kubernetes.io/part-of: minimarket-cloud
+spec:
+  podSelector:
+    matchLabels:
+      app: postgres
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              name: minimarket-backend
+          podSelector:
+            matchExpressions:
+              - key: app
+                operator: In
+                values: ["ventas-api", "reportes-api", "spark-job"]
+      ports:
+        - protocol: TCP
+          port: 5432
