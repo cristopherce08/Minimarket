@@ -9,7 +9,9 @@ metadata:
     app.kubernetes.io/component: api
     {{- include "minimarket.labels" . | nindent 4 }}
 spec:
+  {{- if not .Values.ventasApi.autoscaling.enabled }}
   replicas: {{ .Values.ventasApi.replicaCount }}
+  {{- end }}
   selector:
     matchLabels:
       app: ventas-api
@@ -21,6 +23,7 @@ spec:
         tier: backend
         app.kubernetes.io/component: api
     spec:
+      terminationGracePeriodSeconds: {{ .Values.ventasApi.terminationGracePeriodSeconds | default 30 }}
       containers:
         - name: ventas-api
           image: "{{ .Values.ventasApi.image.repository }}:{{ .Values.ventasApi.image.tag }}"

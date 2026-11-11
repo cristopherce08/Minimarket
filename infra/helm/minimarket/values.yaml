@@ -87,6 +87,22 @@ ventasApi:
     periodSeconds: 5
     timeoutSeconds: 3
     failureThreshold: 3
+  terminationGracePeriodSeconds: 30
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 5
+    targetCPUUtilizationPercentage: 25
+    behavior:
+      scaleUp:
+        stabilizationWindowSeconds: 0
+        percent: 100
+        periodSeconds: 15
+        pods: 2
+      scaleDown:
+        stabilizationWindowSeconds: 60
+        percent: 100
+        periodSeconds: 15
 
 # -------------------------------------------------------------
 # Microservicio reportes-api (namespace: minimarket-backend)
