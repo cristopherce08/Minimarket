@@ -1,0 +1,37 @@
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: minimarket-apis
+  namespace: minimarket-backend
+spec:
+  hosts:
+    - "*"
+  gateways:
+    - minimarket-gateway
+  http:
+    - match:
+        - uri:
+            prefix: /api/v1/reportes
+      route:
+        - destination:
+            host: reportes-api
+            port:
+              number: 8001
+      timeout: 10s
+      retries:
+        attempts: 3
+        perTryTimeout: 3s
+        retryOn: connect-failure,refused-stream
+    - match:
+        - uri:
+            prefix: /api/v1
+      route:
+        - destination:
+            host: ventas-api
+            port:
+              number: 8000
+      timeout: 10s
+      retries:
+        attempts: 3
+        perTryTimeout: 3s
+        retryOn: connect-failure,refused-stream

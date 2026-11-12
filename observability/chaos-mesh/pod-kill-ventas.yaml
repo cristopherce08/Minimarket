@@ -1,0 +1,13 @@
+apiVersion: chaos-mesh.org/v1alpha1
+kind: PodChaos
+metadata:
+  name: pod-kill-ventas
+  namespace: minimarket-backend
+spec:
+  action: pod-kill
+  mode: one
+  selector:
+    namespaces:
+      - minimarket-backend
+    labelSelectors:
+      app: ventas-api
