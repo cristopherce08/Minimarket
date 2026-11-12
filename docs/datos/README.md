@@ -25,7 +25,14 @@ Este directorio documenta la arquitectura de datos, el procesamiento analítico 
    - Gestión de Secrets sin credenciales incrustadas.
    - Monitoreo del reparto de particiones y evidencia de ejecución.
 
-4. [Guía de Sustentación para Evaluación (Criterio 3)](file:///Users/cristopher/Minimarket/docs/datos/guia-sustentacion-integrante3.md)
+4. [Evidencia de Validación Práctica: Spark en Kubernetes y Migraciones Alembic](file:///Users/cristopher/Minimarket/docs/datos/evidencia-spark-alembic-k8s.md)
+   - Aislamiento en entorno efímero `minimarket-test`.
+   - Ejecución exitosa e idempotente de Alembic (`upgrade head`).
+   - Verificación de 2 ejecutores operativos y reparto real de tareas.
+   - Validación de la API de reportes antes y después de Spark.
+   - Confirmación de integridad en base de datos de desarrollo.
+
+5. [Guía de Sustentación para Evaluación (Criterio 3)](file:///Users/cristopher/Minimarket/docs/datos/guia-sustentacion-integrante3.md)
    - Demostración paso a paso frente al docente.
    - Comandos de inspección en vivo.
    - Verificación de la API y el Dashboard Frontend de analítica.

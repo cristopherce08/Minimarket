@@ -13,6 +13,8 @@ Variables de entorno:
   ESPERA_FINAL (90): segundos que se mantienen vivos los ejecutores al terminar,
                      para poder capturar evidencia (kubectl get pods / Spark UI).
 """
+from __future__ import annotations
+
 import os
 import time
 from collections import Counter
