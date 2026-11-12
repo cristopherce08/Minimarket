@@ -1,0 +1,179 @@
+# ==============================================================================
+# MiniMarket Cloud — Valores de Configuración del Helm Chart (values.yaml)
+# Integrante 1: Infraestructura y Redes
+# ==============================================================================
+
+global:
+  environment: production
+  appPartOf: minimarket-cloud
+  namespaces:
+    frontend: minimarket-frontend
+    backend: minimarket-backend
+    data: minimarket-data
+
+backend:
+  # Secret preexistente en minimarket-backend con variables sensibles (DATABASE_URL)
+  existingSecret: "backend-db-secret"
+
+# -------------------------------------------------------------
+# Base de Datos PostgreSQL (namespace: minimarket-data)
+# -------------------------------------------------------------
+postgresql:
+  enabled: true
+  image:
+    repository: postgres
+    tag: "16-alpine"
+    pullPolicy: IfNotPresent
+  service:
+    port: 5432
+    name: postgres
+  persistence:
+    enabled: true
+    storageClass: "standard"
+    accessMode: ReadWriteOnce
+    size: 2Gi
+    pv:
+      enabled: false
+      name: postgres-pv
+      hostPath: /data/minimarket-postgres
+  auth:
+    database: minimarket_db
+    username: minimarket_user
+    # En entornos seguros, se referencia un Secret preexistente fuera del repositorio
+    existingSecret: "postgres-secret"
+    password: ""
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+# -------------------------------------------------------------
+# Microservicio ventas-api (namespace: minimarket-backend)
+# -------------------------------------------------------------
+ventasApi:
+  replicaCount: 2
+  image:
+    repository: minimarket-ventas-api
+    tag: latest
+    pullPolicy: IfNotPresent
+  service:
+    type: ClusterIP
+    port: 8000
+    name: ventas-api
+  env:
+    APP_PORT: "8000"
+    LOW_STOCK_THRESHOLD: "5"
+    CORS_ORIGINS: "*"
+    DB_POOL_SIZE: "5"
+    DB_MAX_OVERFLOW: "5"
+    # NOTA: DATABASE_URL se inyecta de forma segura desde el Secret backend-db-secret
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+  livenessProbe:
+    httpGet:
+      path: /health
+      port: 8000
+    initialDelaySeconds: 5
+    periodSeconds: 10
+    timeoutSeconds: 3
+    failureThreshold: 3
+  readinessProbe:
+    httpGet:
+      path: /ready
+      port: 8000
+    initialDelaySeconds: 5
+    periodSeconds: 5
+    timeoutSeconds: 3
+    failureThreshold: 3
+  terminationGracePeriodSeconds: 30
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 5
+    targetCPUUtilizationPercentage: 25
+    behavior:
+      scaleUp:
+        stabilizationWindowSeconds: 0
+        percent: 100
+        periodSeconds: 15
+        pods: 2
+      scaleDown:
+        stabilizationWindowSeconds: 60
+        percent: 100
+        periodSeconds: 15
+
+# -------------------------------------------------------------
+# Microservicio reportes-api (namespace: minimarket-backend)
+# -------------------------------------------------------------
+reportesApi:
+  replicaCount: 1
+  image:
+    repository: minimarket-reportes-api
+    tag: latest
+    pullPolicy: IfNotPresent
+  service:
+    type: ClusterIP
+    port: 8001
+    name: reportes-api
+  env:
+    APP_PORT: "8001"
+    CORS_ORIGINS: "*"
+    # NOTA: DATABASE_URL se inyecta de forma segura desde el Secret backend-db-secret
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+  livenessProbe:
+    httpGet:
+      path: /health
+      port: 8001
+    initialDelaySeconds: 5
+    periodSeconds: 10
+    timeoutSeconds: 3
+  readinessProbe:
+    httpGet:
+      path: /ready
+      port: 8001
+    initialDelaySeconds: 5
+    periodSeconds: 5
+    timeoutSeconds: 3
+
+# -------------------------------------------------------------
+# Frontend Web (namespace: minimarket-frontend)
+# -------------------------------------------------------------
+frontend:
+  replicaCount: 1
+  image:
+    repository: minimarket-frontend
+    tag: latest
+    pullPolicy: IfNotPresent
+  service:
+    type: NodePort
+    port: 80
+    nodePort: 30080
+    name: frontend
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: 200m
+      memory: 128Mi
+
+# -------------------------------------------------------------
+# Migraciones de base de datos Alembic (namespace: minimarket-backend)
+# -------------------------------------------------------------
+migrations:
+  enabled: true
+

@@ -42,6 +42,11 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.error(f"Advertencia al conectar con la base de datos en inicio: {e}")
     yield
+    try:
+        engine.dispose()
+        logger.info("Conexiones de base de datos cerradas ordenadamente.")
+    except Exception as e:
+        logger.error(f"Error al cerrar conexiones de base de datos: {e}")
 
 
 app = FastAPI(
@@ -50,6 +55,16 @@ app = FastAPI(
     description="Microservicio transaccional de ventas, catálogo e inventario para MiniMarket Cloud.",
     lifespan=lifespan,
 )
+app.add_middleware(PrometheusMiddleware)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 app.add_middleware(PrometheusMiddleware)
 
 

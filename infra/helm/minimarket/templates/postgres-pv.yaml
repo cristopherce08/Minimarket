@@ -1,0 +1,19 @@
+{{- if and .Values.postgresql.enabled .Values.postgresql.persistence.enabled .Values.postgresql.persistence.pv.enabled }}
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: {{ .Values.postgresql.persistence.pv.name }}
+  labels:
+    app: postgres
+    {{- include "minimarket.labels" . | nindent 4 }}
+spec:
+  capacity:
+    storage: {{ .Values.postgresql.persistence.size }}
+  accessModes:
+    - {{ .Values.postgresql.persistence.accessMode }}
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: {{ .Values.postgresql.persistence.storageClass }}
+  hostPath:
+    path: {{ .Values.postgresql.persistence.pv.hostPath }}
+    type: DirectoryOrCreate
+{{- end }}

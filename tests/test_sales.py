@@ -128,3 +128,60 @@ def test_prevent_overselling_concurrency(client):
     # Verificar stock final en base de datos
     final_prod = client.get(f"/api/v1/productos/{prod_id}").json()
     assert final_prod["stock"] == 0, f"El stock final debería ser 0, pero es {final_prod['stock']}"
+
+
+def test_concurrent_multi_product_sales_no_deadlock(client):
+    """
+    Prueba 9: Concurrencia multi-producto sin interbloqueos (Deadlock Prevention).
+    Dos hilos compran los mismos dos productos en órdenes inversos.
+    El ordenamiento ascendente por ID previene deadlocks en PostgreSQL.
+    """
+    p1 = client.post("/api/v1/productos", json={"name": "Leche Gloria 400g", "price": 4.20, "stock": 10}).json()
+    p2 = client.post("/api/v1/productos", json={"name": "Avena 3 Ositos 500g", "price": 3.50, "stock": 10}).json()
+
+    # Payload A: p1 luego p2
+    payload_a = {"items": [{"product_id": p1["id"], "quantity": 1}, {"product_id": p2["id"], "quantity": 1}]}
+    # Payload B: p2 luego p1 (orden invertido intencionalmente)
+    payload_b = {"items": [{"product_id": p2["id"], "quantity": 1}, {"product_id": p1["id"], "quantity": 1}]}
+
+    def run_purchase(payload):
+        return client.post("/api/v1/ventas", json=payload).status_code
+
+    with ThreadPoolExecutor(max_workers=4) as executor:
+        f1 = [executor.submit(run_purchase, payload_a) for _ in range(5)]
+        f2 = [executor.submit(run_purchase, payload_b) for _ in range(5)]
+        statuses = [f.result() for f in f1 + f2]
+
+    # Todas las 10 ventas deben completarse (10 * 1 = 10 unidades de cada uno)
+    assert statuses.count(201) == 10
+    check_p1 = client.get(f"/api/v1/productos/{p1['id']}").json()
+    check_p2 = client.get(f"/api/v1/productos/{p2['id']}").json()
+    assert check_p1["stock"] == 0
+    assert check_p2["stock"] == 0
+
+
+def test_high_concurrency_exact_inventory_accounting(client):
+    """
+    Prueba 10: Auditoría exacta de inventario y sobreventa en alta concurrencia.
+    20 solicitudes concurrentes compitiendo por 7 unidades disponibles.
+    Exactamente 7 deben ser 201 y 13 deben ser 400. Stock final debe ser 0.
+    """
+    p = client.post("/api/v1/productos", json={"name": "Yogurt Gloria Fresa 1L", "price": 6.80, "stock": 7}).json()
+    prod_id = p["id"]
+
+    def buy_one():
+        return client.post(
+            "/api/v1/ventas",
+            json={"items": [{"product_id": prod_id, "quantity": 1}]},
+        ).status_code
+
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        futures = [executor.submit(buy_one) for _ in range(20)]
+        results = [f.result() for f in futures]
+
+    assert results.count(201) == 7, f"Se esperaban 7 éxitos, pero ocurrieron {results.count(201)}"
+    assert results.count(400) == 13, f"Se esperaban 13 rechazos, pero ocurrieron {results.count(400)}"
+
+    final_p = client.get(f"/api/v1/productos/{prod_id}").json()
+    assert final_p["stock"] == 0
+

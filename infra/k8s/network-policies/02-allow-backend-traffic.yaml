@@ -1,0 +1,92 @@
+# ==============================================================================
+# MiniMarket Cloud — NetworkPolicy: Tráfico autorizado en minimarket-backend
+# ==============================================================================
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-backend-traffic
+  namespace: minimarket-backend
+  labels:
+    app.kubernetes.io/part-of: minimarket-cloud
+spec:
+  podSelector:
+    matchLabels:
+      tier: backend
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # 1. Tráfico HTTP autorizado exclusivamente desde pods frontend
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              name: minimarket-frontend
+          podSelector:
+            matchLabels:
+              tier: frontend
+      ports:
+        - protocol: TCP
+          port: 8000
+        - protocol: TCP
+          port: 8001
+    # 2. Tráfico interno entre servicios backend (e.g. reportes-api a ventas-api)
+    - from:
+        - podSelector:
+            matchLabels:
+              tier: backend
+      ports:
+        - protocol: TCP
+          port: 8000
+        - protocol: TCP
+          port: 8001
+    # 3. Kubelet health checks (liveness/readiness probes originados desde el nodo)
+    - from:
+        - ipBlock:
+            cidr: 192.168.49.0/24
+      ports:
+        - protocol: TCP
+          port: 8000
+        - protocol: TCP
+          port: 8001
+    # 4. Monitoreo y Observabilidad (Prometheus / Istio / Chaos Mesh en namespaces dedicados)
+    - from:
+        - namespaceSelector:
+            matchExpressions:
+              - key: name
+                operator: In
+                values: ["observabilidad", "monitoring", "istio-system", "chaos-testing"]
+      ports:
+        - protocol: TCP
+          port: 8000
+        - protocol: TCP
+          port: 8001
+  egress:
+    # 1. Salida hacia PostgreSQL en minimarket-data
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              name: minimarket-data
+          podSelector:
+            matchLabels:
+              app: postgres
+      ports:
+        - protocol: TCP
+          port: 5432
+    # 2. Tráfico interno entre servicios backend
+    - to:
+        - podSelector:
+            matchLabels:
+              tier: backend
+      ports:
+        - protocol: TCP
+          port: 8000
+        - protocol: TCP
+          port: 8001
+    # 3. Resolución de nombres DNS (CoreDNS en kube-system)
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53

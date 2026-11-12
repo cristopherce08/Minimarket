@@ -1,0 +1,49 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Values.ventasApi.service.name }}
+  namespace: {{ .Values.global.namespaces.backend }}
+  labels:
+    app: ventas-api
+    tier: backend
+    app.kubernetes.io/component: api
+    {{- include "minimarket.labels" . | nindent 4 }}
+spec:
+  {{- if not .Values.ventasApi.autoscaling.enabled }}
+  replicas: {{ .Values.ventasApi.replicaCount }}
+  {{- end }}
+  selector:
+    matchLabels:
+      app: ventas-api
+      tier: backend
+  template:
+    metadata:
+      labels:
+        app: ventas-api
+        tier: backend
+        app.kubernetes.io/component: api
+    spec:
+      terminationGracePeriodSeconds: {{ .Values.ventasApi.terminationGracePeriodSeconds | default 30 }}
+      containers:
+        - name: ventas-api
+          image: "{{ .Values.ventasApi.image.repository }}:{{ .Values.ventasApi.image.tag }}"
+          imagePullPolicy: {{ .Values.ventasApi.image.pullPolicy }}
+          ports:
+            - containerPort: {{ .Values.ventasApi.service.port }}
+              name: http
+              protocol: TCP
+          envFrom:
+            - configMapRef:
+                name: backend-config
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.backend.existingSecret | default "backend-db-secret" }}
+                  key: DATABASE_URL
+          resources:
+            {{- toYaml .Values.ventasApi.resources | nindent 12 }}
+          livenessProbe:
+            {{- toYaml .Values.ventasApi.livenessProbe | nindent 12 }}
+          readinessProbe:
+            {{- toYaml .Values.ventasApi.readinessProbe | nindent 12 }}

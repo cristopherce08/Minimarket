@@ -1,0 +1,15 @@
+apiVersion: v2
+name: minimarket
+description: Helm Chart modular para MiniMarket Cloud — Sistema de Ventas e Inventario Cloud-Native (UTP)
+type: application
+version: 0.1.0
+appVersion: "1.0.0"
+maintainers:
+  - name: Integrante 1 — Infraestructura Cloud
+    email: infraestructura@minimarket.local
+keywords:
+  - minimarket
+  - fast-api
+  - postgresql
+  - kubernetes
+  - cloud-native
