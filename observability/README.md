@@ -83,9 +83,8 @@ Integridad: en la prueba de red hubo 3010 ventas en BD frente a 3002 respuestas 
 2. **Idempotencia.** Un 504 puede ocultar una venta ya registrada; un reintento duplicaría la venta. Se recomienda una clave de idempotencia en POST /ventas. Por eso el VirtualService solo reintenta en connect-failure y refused-stream.
 3. **Readiness comparte el pool de la app.** Con el pool agotado el pod sale del servicio y la congestión se agrava.
 4. **Arranque.** La versión anterior de ventas-api no reintentaba la conexión a BD si PostgreSQL aún no estaba listo.
-5. **CORS.** CORSMiddleware está importado pero no registrado en ventas-api.
-6. **Observabilidad.** La métrica de la app no ve los errores que genera Istio (503 y 504); el dashboard usa istio_requests_total del gateway (PodMonitor).
-7. **NetworkPolicies.** Verificar que no bloqueen el scrape de Prometheus desde monitoring antes de aplicarlas.
+5. **Observabilidad.** La métrica de la app no ve los errores que genera Istio (503 y 504); el dashboard usa istio_requests_total del gateway (PodMonitor).
+6. **NetworkPolicies.** Verificar que no bloqueen el scrape de Prometheus desde monitoring antes de aplicarlas.
 
 ## 7. Dimensionamiento físico y TCO
 
