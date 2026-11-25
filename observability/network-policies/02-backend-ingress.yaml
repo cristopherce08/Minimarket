@@ -1,0 +1,109 @@
+# Default-deny de ingress en minimarket-backend + excepciones explicitas.
+# Egress queda abierto (no se restringe en esta etapa).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: backend-default-deny-ingress
+  namespace: minimarket-backend
+spec:
+  podSelector: {}
+  policyTypes: [Ingress]
+---
+# ingressgateway (Istio) -> APIs
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: backend-allow-ingressgateway
+  namespace: minimarket-backend
+spec:
+  podSelector:
+    matchExpressions:
+      - key: app
+        operator: In
+        values: [ventas-api, reportes-api]
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: istio-system
+          podSelector:
+            matchLabels:
+              app: istio-ingressgateway
+      ports:
+        - {protocol: TCP, port: 8000}
+        - {protocol: TCP, port: 8001}
+---
+# frontend (nginx proxy_pass) -> APIs
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: backend-allow-frontend
+  namespace: minimarket-backend
+spec:
+  podSelector:
+    matchExpressions:
+      - key: app
+        operator: In
+        values: [ventas-api, reportes-api]
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: minimarket-frontend
+          podSelector:
+            matchLabels:
+              app: frontend
+      ports:
+        - {protocol: TCP, port: 8000}
+        - {protocol: TCP, port: 8001}
+---
+# Prometheus (monitoring) -> metricas de las APIs (8000/8001) y de los sidecars (15090)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: backend-allow-prometheus
+  namespace: minimarket-backend
+spec:
+  podSelector: {}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: prometheus
+      ports:
+        - {protocol: TCP, port: 8000}
+        - {protocol: TCP, port: 8001}
+        - {protocol: TCP, port: 15090}
+---
+# Comunicacion interna del namespace (ventas-api <-> reportes-api)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: backend-allow-same-namespace
+  namespace: minimarket-backend
+spec:
+  podSelector: {}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector: {}
+---
+# kubelet / probes desde el nodo de minikube (192.168.49.2)
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: backend-allow-kubelet
+  namespace: minimarket-backend
+spec:
+  podSelector: {}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - ipBlock:
+            cidr: 192.168.49.2/32

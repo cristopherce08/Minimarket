@@ -1,0 +1,23 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: postgres-solo-apis
+  namespace: minimarket-data
+spec:
+  podSelector:
+    matchLabels:
+      app: postgres
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: minimarket-backend
+          podSelector:
+            matchExpressions:
+              - key: app
+                operator: In
+                values: [ventas-api, reportes-api, alembic-migration]
+      ports:
+        - protocol: TCP
+          port: 5432
