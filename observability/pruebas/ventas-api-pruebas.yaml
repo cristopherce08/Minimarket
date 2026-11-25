@@ -1,0 +1,187 @@
+# Copia de ventas-api para pruebas de carga y de caos.
+# Usa la BD minimarket_pruebas (secret backend-db-pruebas-secret), nunca minimarket_db.
+# Entrada por el gateway con el host pruebas.minimarket.local (la ruta real no cambia).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ventas-api-pruebas
+  namespace: minimarket-pruebas
+  labels:
+    app: ventas-api-pruebas
+    tier: backend
+    entorno: pruebas
+    app.kubernetes.io/component: api
+spec:
+  selector:
+    matchLabels:
+      app: ventas-api-pruebas
+      tier: backend
+  template:
+    metadata:
+      labels:
+        app: ventas-api-pruebas
+        tier: backend
+        entorno: pruebas
+        app.kubernetes.io/component: api
+    spec:
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: ventas-api
+          image: minimarket-ventas-api:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8000
+              name: http
+              protocol: TCP
+          command: ["python", "/guard/verificar-db.py", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+          volumeMounts:
+            - name: db-guard
+              mountPath: /guard
+              readOnly: true
+          env:
+            - name: DB_CREATE_SCHEMA_ON_STARTUP
+              value: "false"
+            # Pool mas chico que el de produccion para no superar max_connections (100) de Postgres
+            - name: DB_POOL_SIZE
+              value: "3"
+            - name: DB_MAX_OVERFLOW
+              value: "2"
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: backend-db-pruebas-secret
+                  key: DATABASE_URL
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+      volumes:
+        - name: db-guard
+          configMap:
+            name: pruebas-db-guard
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ventas-api-pruebas
+  namespace: minimarket-pruebas
+  labels:
+    app: ventas-api-pruebas
+    tier: backend
+    entorno: pruebas
+spec:
+  type: ClusterIP
+  ports:
+    - port: 8000
+      targetPort: http
+      protocol: TCP
+      name: http
+  selector:
+    app: ventas-api-pruebas
+    tier: backend
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: ventas-api-pruebas-hpa
+  namespace: minimarket-pruebas
+  labels:
+    app: ventas-api-pruebas
+    entorno: pruebas
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: ventas-api-pruebas
+  minReplicas: 2
+  maxReplicas: 5
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 25
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 0
+      policies:
+        - type: Percent
+          value: 100
+          periodSeconds: 15
+        - type: Pods
+          value: 2
+          periodSeconds: 15
+      selectPolicy: Max
+    scaleDown:
+      stabilizationWindowSeconds: 60
+      policies:
+        - type: Percent
+          value: 100
+          periodSeconds: 15
+      selectPolicy: Min
+---
+# Mismo circuit breaker (outlier detection) que la API real
+apiVersion: networking.istio.io/v1
+kind: DestinationRule
+metadata:
+  name: ventas-api-pruebas
+  namespace: minimarket-pruebas
+spec:
+  host: ventas-api-pruebas
+  trafficPolicy:
+    connectionPool:
+      tcp:
+        maxConnections: 100
+      http:
+        http1MaxPendingRequests: 50
+        maxRequestsPerConnection: 10
+    outlierDetection:
+      consecutive5xxErrors: 3
+      interval: 10s
+      baseEjectionTime: 30s
+      maxEjectionPercent: 50
+---
+# Ruta de pruebas: solo recibe peticiones con Host: pruebas.minimarket.local
+# La ruta de ventas desactiva los reintentos automáticos.
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata:
+  name: minimarket-apis-pruebas
+  namespace: minimarket-pruebas
+spec:
+  hosts:
+    - "pruebas.minimarket.local"
+  gateways:
+    - istio-system/minimarket-gateway
+  http:
+    - match:
+        - uri:
+            prefix: /api/v1
+      route:
+        - destination:
+            host: ventas-api-pruebas
+            port:
+              number: 8000
+      timeout: 10s
+      retries:
+        attempts: 0

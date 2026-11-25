@@ -1,0 +1,19 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.ventasApi.service.name }}
+  namespace: {{ .Values.global.namespaces.backend }}
+  labels:
+    app: ventas-api
+    tier: backend
+    {{- include "minimarket.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.ventasApi.service.type }}
+  ports:
+    - port: {{ .Values.ventasApi.service.port }}
+      targetPort: http
+      protocol: TCP
+      name: http
+  selector:
+    app: ventas-api
+    tier: backend

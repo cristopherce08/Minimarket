@@ -1,0 +1,107 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: pruebas-deny-all
+  namespace: minimarket-pruebas
+  labels:
+    app.kubernetes.io/part-of: minimarket-cloud
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: pruebas-db-ingress
+  namespace: minimarket-pruebas
+  labels:
+    app.kubernetes.io/part-of: minimarket-cloud
+spec:
+  podSelector:
+    matchLabels:
+      app: postgres-pruebas
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              entorno: pruebas
+            matchExpressions:
+              - key: app
+                operator: In
+                values: [ventas-api-pruebas, alembic-migration-pruebas]
+      ports:
+        - {protocol: TCP, port: 5432}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: pruebas-clientes-egress
+  namespace: minimarket-pruebas
+  labels:
+    app.kubernetes.io/part-of: minimarket-cloud
+spec:
+  podSelector:
+    matchLabels:
+      entorno: pruebas
+    matchExpressions:
+      - key: app
+        operator: In
+        values: [ventas-api-pruebas, alembic-migration-pruebas]
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app: postgres-pruebas
+      ports:
+        - {protocol: TCP, port: 5432}
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - {protocol: UDP, port: 53}
+        - {protocol: TCP, port: 53}
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: istio-system
+          podSelector:
+            matchLabels:
+              app: istiod
+      ports:
+        - {protocol: TCP, port: 15012}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: pruebas-api-ingress
+  namespace: minimarket-pruebas
+  labels:
+    app.kubernetes.io/part-of: minimarket-cloud
+spec:
+  podSelector:
+    matchLabels:
+      app: ventas-api-pruebas
+      entorno: pruebas
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: istio-system
+          podSelector:
+            matchLabels:
+              app: istio-ingressgateway
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: prometheus
+      ports:
+        - {protocol: TCP, port: 8000}

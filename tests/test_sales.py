@@ -128,3 +128,112 @@ def test_prevent_overselling_concurrency(client):
     # Verificar stock final en base de datos
     final_prod = client.get(f"/api/v1/productos/{prod_id}").json()
     assert final_prod["stock"] == 0, f"El stock final debería ser 0, pero es {final_prod['stock']}"
+
+
+def test_concurrent_multi_product_sales_no_deadlock(client):
+    """
+    Prueba 9: Concurrencia multi-producto sin interbloqueos (Deadlock Prevention).
+    Dos hilos compran los mismos dos productos en órdenes inversos.
+    El ordenamiento ascendente por ID previene deadlocks en PostgreSQL.
+    """
+    p1 = client.post("/api/v1/productos", json={"name": "Leche Gloria 400g", "price": 4.20, "stock": 10}).json()
+    p2 = client.post("/api/v1/productos", json={"name": "Avena 3 Ositos 500g", "price": 3.50, "stock": 10}).json()
+
+    # Payload A: p1 luego p2
+    payload_a = {"items": [{"product_id": p1["id"], "quantity": 1}, {"product_id": p2["id"], "quantity": 1}]}
+    # Payload B: p2 luego p1 (orden invertido intencionalmente)
+    payload_b = {"items": [{"product_id": p2["id"], "quantity": 1}, {"product_id": p1["id"], "quantity": 1}]}
+
+    def run_purchase(payload):
+        return client.post("/api/v1/ventas", json=payload).status_code
+
+    with ThreadPoolExecutor(max_workers=4) as executor:
+        f1 = [executor.submit(run_purchase, payload_a) for _ in range(5)]
+        f2 = [executor.submit(run_purchase, payload_b) for _ in range(5)]
+        statuses = [f.result() for f in f1 + f2]
+
+    # Todas las 10 ventas deben completarse (10 * 1 = 10 unidades de cada uno)
+    assert statuses.count(201) == 10
+    check_p1 = client.get(f"/api/v1/productos/{p1['id']}").json()
+    check_p2 = client.get(f"/api/v1/productos/{p2['id']}").json()
+    assert check_p1["stock"] == 0
+    assert check_p2["stock"] == 0
+
+
+def test_high_concurrency_exact_inventory_accounting(client):
+    """
+    Prueba 10: Auditoría exacta de inventario y sobreventa en alta concurrencia.
+    20 solicitudes concurrentes compitiendo por 7 unidades disponibles.
+    Exactamente 7 deben ser 201 y 13 deben ser 400. Stock final debe ser 0.
+    """
+    p = client.post("/api/v1/productos", json={"name": "Yogurt Gloria Fresa 1L", "price": 6.80, "stock": 7}).json()
+    prod_id = p["id"]
+
+    def buy_one():
+        return client.post(
+            "/api/v1/ventas",
+            json={"items": [{"product_id": prod_id, "quantity": 1}]},
+        ).status_code
+
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        futures = [executor.submit(buy_one) for _ in range(20)]
+        results = [f.result() for f in futures]
+
+    assert results.count(201) == 7, f"Se esperaban 7 éxitos, pero ocurrieron {results.count(201)}"
+    assert results.count(400) == 13, f"Se esperaban 13 rechazos, pero ocurrieron {results.count(400)}"
+
+    final_p = client.get(f"/api/v1/productos/{prod_id}").json()
+    assert final_p["stock"] == 0
+
+
+
+def test_replay_after_lost_response_does_not_deduct_again(client):
+    product = client.post(
+        "/api/v1/productos", json={"name": "Producto único", "price": 2, "stock": 1}
+    ).json()
+    path = "/api/v1/ventas"
+    body = {"items": [{"product_id": product["id"], "quantity": 1}]}
+    headers = {"Idempotency-Key": "lost-response-1"}
+
+    original = client.post(path, json=body, headers=headers)
+    replay = client.post(path, json=body, headers=headers)
+
+    assert original.status_code == replay.status_code == 201
+    assert replay.json() == original.json()
+    assert len(client.get(path).json()) == 1
+    assert client.get(f"/api/v1/productos/{product['id']}").json()["stock"] == 0
+
+
+def test_concurrent_idempotency_and_conflicting_body(client):
+    product = client.post(
+        "/api/v1/productos", json={"name": "Producto concurrente", "price": 2, "stock": 3}
+    ).json()
+    path = "/api/v1/ventas"
+    headers = {"Idempotency-Key": "same-key-two-requests"}
+    body = {"items": [{"product_id": product["id"], "quantity": 1}]}
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        attempts = [pool.submit(client.post, path, json=body, headers=headers) for _ in range(2)]
+        first, second = [attempt.result() for attempt in attempts]
+
+    assert first.status_code == second.status_code == 201
+    assert first.json() == second.json()
+    conflict = client.post(
+        path, json={"items": [{"product_id": product["id"], "quantity": 2}]}, headers=headers
+    )
+    assert conflict.status_code == 409
+    assert len(client.get(path).json()) == 1
+    assert client.get(f"/api/v1/productos/{product['id']}").json()["stock"] == 2
+
+
+def test_rolled_back_sale_releases_idempotency_key(client):
+    product = client.post(
+        "/api/v1/productos", json={"name": "Producto sin stock", "price": 2, "stock": 0}
+    ).json()
+    headers = {"Idempotency-Key": "retry-after-rollback"}
+    body = {"items": [{"product_id": product["id"], "quantity": 1}]}
+
+    assert client.post("/api/v1/ventas", json=body, headers=headers).status_code == 400
+    assert client.put(f"/api/v1/productos/{product['id']}", json={"stock": 1}).status_code == 200
+    assert client.post("/api/v1/ventas", json=body, headers=headers).status_code == 201
+    assert len(client.get("/api/v1/ventas").json()) == 1

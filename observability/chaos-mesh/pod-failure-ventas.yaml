@@ -1,0 +1,18 @@
+# Deja fuera de servicio un pod de ventas-api-pruebas durante 60 s.
+# Sirve para demostrar el circuit breaker (outlierDetection de la DestinationRule):
+# Istio debe sacar de circulacion al pod que falla.
+apiVersion: chaos-mesh.org/v1alpha1
+kind: PodChaos
+metadata:
+  name: pod-failure-ventas
+  namespace: minimarket-pruebas
+spec:
+  action: pod-failure
+  mode: one
+  duration: "60s"
+  selector:
+    namespaces:
+      - minimarket-pruebas
+    labelSelectors:
+      app: ventas-api-pruebas
+      entorno: pruebas

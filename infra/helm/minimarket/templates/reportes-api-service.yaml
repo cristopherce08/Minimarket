@@ -1,0 +1,19 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.reportesApi.service.name }}
+  namespace: {{ .Values.global.namespaces.backend }}
+  labels:
+    app: reportes-api
+    tier: backend
+    {{- include "minimarket.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.reportesApi.service.type }}
+  ports:
+    - port: {{ .Values.reportesApi.service.port }}
+      targetPort: http
+      protocol: TCP
+      name: http
+  selector:
+    app: reportes-api
+    tier: backend

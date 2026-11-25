@@ -171,6 +171,7 @@ Prefijo base: `/api/v1`
 ### 2.3. Endpoints del Módulo de Ventas
 
 #### `POST /api/v1/ventas`
+- **`Idempotency-Key` opcional:** conserva la misma clave y el mismo cuerpo al reintentar después de un timeout. Acepta de 1 a 128 caracteres ASCII alfanuméricos o `._:-`. La misma combinación devuelve el mismo ID y detalle con `201`, incluso tras una solicitud concurrente. La misma clave con otro cuerpo devuelve `409`. Las operaciones revertidas liberan la clave. Los clientes que omiten la cabecera crean una venta por cada solicitud aceptada.
 - **Descripción:** Registro atómico de venta multi-producto. Bloquea filas en PostgreSQL con `with_for_update()`, valida stock disponible de todos los ítems, descuenta el inventario y genera la venta con su detalle. Si falla cualquier producto por stock insuficiente, se cancela toda la venta mediante `ROLLBACK`.
 - **Payload (`application/json`):**
 ```json
@@ -261,7 +262,17 @@ Prefijo base: `/api/v1/reportes`
 - `GET /ready`: Estado readiness (conexión a PostgreSQL).
 - `GET /metrics`: Métricas Prometheus.
 
-### 3.2. Endpoints de Reportes Estadísticos
+3.2 GET /api/v1/reportes/spark
+
+Resultados del último procesamiento distribuido con Apache Spark (tablas agg_*).
+
+Query params: limite (1-50, default 10) = productos del ranking; dias (1-365, default 30) = últimos N días.
+
+Respuesta 200 (job ejecutado): { "disponible": true, "procesado_en": "2026-11-11T04:00:59", "resumen": {"total_ventas": 200000, "ingresos_totales": "2649828.80", "total_productos": 12}, "productos_top": [{"ranking": 1, "product_id": 5, "product_name": "Coca Cola 500ml", "unidades_vendidas": 50641, "total_recaudado": "177243.50"}], "ventas_por_dia": [{"fecha": "2026-11-10", "numero_ventas": 6514, "total_ingresos": "86241.50"}] }
+
+Respuesta 200 (job aún no ejecutado): {"disponible": false, "resumen": null, "productos_top": [], "ventas_por_dia": []} Errores: 422 parámetros fuera de rango; 500 error al leer tablas (¿migración 002 aplicada?).
+
+### 3.3. Endpoints de Reportes Estadísticos
 
 #### `GET /api/v1/reportes/ventas-hoy`
 - **Respuesta (`200 OK`):**

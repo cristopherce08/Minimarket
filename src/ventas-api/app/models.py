@@ -43,6 +43,16 @@ class Sale(Base):
     )
 
 
+class SaleRequest(Base):
+    __tablename__ = "sale_requests"
+
+    key = Column(String(128), primary_key=True)
+    payload_hash = Column(String(64), nullable=False)
+    sale_id = Column(Integer, ForeignKey("sales.id", ondelete="CASCADE"), unique=True)
+
+    sale = relationship("Sale")
+
+
 class SaleItem(Base):
     __tablename__ = "sale_items"
 
