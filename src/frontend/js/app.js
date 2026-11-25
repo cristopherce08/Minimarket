@@ -16,6 +16,7 @@ const AppState = {
   currentView: "inicio",
   products: [],
   cart: [], // Array de { product_id, name, price, stock, quantity, subtotal }
+  pendingSale: null,
   filtroBajoStockActivo: false,
   inventoryFilter: "all",
   backendOnline: false,
@@ -491,19 +492,31 @@ async function submitSale() {
   };
  
   try {
+    const body = JSON.stringify(payload);
+    if (AppState.pendingSale?.body !== body) {
+      const bytes = crypto.getRandomValues(new Uint8Array(16));
+      const key = Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
+      AppState.pendingSale = { body, key };
+    }
     const res = await fetch(`${API_VENTAS_BASE}/api/v1/ventas`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
+      headers: {
+        "Content-Type": "application/json",
+        "Idempotency-Key": AppState.pendingSale.key,
+      },
+      body,
     });
  
+    if (res.status >= 500) {
+      throw new Error("No se confirmó el resultado. Puedes volver a enviar el mismo carrito.");
+    }
     const data = await res.json();
  
     if (!res.ok) {
       throw new Error(data.detail || "Error al procesar la venta en base de datos");
     }
  
-    // Venta exitosa
+    AppState.pendingSale = null;
     showTicketModal(data);
     clearCart();
     loadPosCatalog(); // Recarga catálogo con stock actualizado inmediatamente
@@ -841,4 +854,3 @@ function escapeHtml(str) {
 function roundMoney(num) {
   return Math.round((num + Number.EPSILON) * 100) / 100;
 }
- 

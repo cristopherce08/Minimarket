@@ -2,15 +2,16 @@ apiVersion: chaos-mesh.org/v1alpha1
 kind: NetworkChaos
 metadata:
   name: network-loss-ventas
-  namespace: chaos-mesh
+  namespace: minimarket-pruebas
 spec:
   action: loss
   mode: all
   selector:
     namespaces:
-      - minimarket-backend
+      - minimarket-pruebas
     labelSelectors:
       app: ventas-api-pruebas
+      entorno: pruebas
   loss:
     loss: "10"
     correlation: "25"

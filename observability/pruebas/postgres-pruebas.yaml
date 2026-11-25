@@ -1,0 +1,95 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres-pruebas
+  namespace: minimarket-pruebas
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: postgres-pruebas
+  template:
+    metadata:
+      labels:
+        app: postgres-pruebas
+        sidecar.istio.io/inject: "false"
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:16-alpine
+          args: ["-c", "idle_in_transaction_session_timeout=30s"]
+          env:
+            - name: POSTGRES_DB
+              value: minimarket_pruebas
+            - name: POSTGRES_USER
+              value: minimarket_pruebas
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: backend-db-pruebas-secret
+                  key: POSTGRES_PASSWORD
+          ports:
+            - {name: postgres, containerPort: 5432}
+          readinessProbe:
+            exec:
+              command: ["pg_isready", "-U", "minimarket_pruebas", "-d", "minimarket_pruebas"]
+            periodSeconds: 3
+          resources:
+            requests: {cpu: 100m, memory: 128Mi}
+            limits: {cpu: 500m, memory: 384Mi}
+          volumeMounts:
+            - {name: datos, mountPath: /var/lib/postgresql/data}
+      volumes:
+        - name: datos
+          emptyDir:
+            sizeLimit: 512Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres-pruebas
+  namespace: minimarket-pruebas
+spec:
+  selector:
+    app: postgres-pruebas
+  ports:
+    - {name: postgres, port: 5432, targetPort: postgres}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: pruebas-db-guard
+  namespace: minimarket-pruebas
+data:
+  verificar-db.py: |
+    import os
+    import sys
+    from sqlalchemy import create_engine, text
+    from sqlalchemy.engine import make_url
+
+    try:
+        url = make_url(os.environ["DATABASE_URL"])
+        expected_db = "minimarket_pruebas"
+        if url.database == "minimarket_db":
+            sys.exit("Base protegida minimarket_db rechazada.")
+        if (
+            url.get_backend_name() != "postgresql"
+            or url.host != "postgres-pruebas.minimarket-pruebas.svc.cluster.local"
+            or url.port != 5432
+            or url.database != expected_db
+            or url.username != expected_db
+            or not url.password
+            or url.query
+        ):
+            sys.exit("Destino PostgreSQL fuera de la lista de pruebas.")
+        engine = create_engine(url, connect_args={"connect_timeout": 5})
+        with engine.connect() as connection:
+            if connection.scalar(text("SELECT current_database()")) != expected_db:
+                sys.exit("PostgreSQL no confirmó la base de pruebas.")
+        engine.dispose()
+    except Exception:
+        sys.exit("No se pudo verificar el destino PostgreSQL de pruebas.")
+
+    os.execvp(sys.argv[1], sys.argv[1:])

@@ -11,6 +11,7 @@ class Settings(BaseSettings):
     )
     APP_NAME: str = "MiniMarket Cloud — Ventas API"
     APP_PORT: int = 8000
+    DB_CREATE_SCHEMA_ON_STARTUP: bool = True
     LOW_STOCK_THRESHOLD: int = 5
     CORS_ORIGINS: str = "*"
 

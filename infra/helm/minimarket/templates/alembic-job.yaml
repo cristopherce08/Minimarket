@@ -18,6 +18,7 @@ spec:
     metadata:
       labels:
         app: alembic-migration
+        sidecar.istio.io/inject: "false"
         tier: backend
     spec:
       restartPolicy: OnFailure

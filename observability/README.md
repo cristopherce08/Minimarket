@@ -1,92 +1,33 @@
-# Observabilidad y resiliencia (Integrante 4)
+# Observabilidad y resiliencia
 
-Istio, Prometheus/Grafana, Chaos Mesh y pruebas de carga del MiniMarket sobre minikube.
+MiniMarket expone las APIs del entorno base en `minimarket.local` y las ventas de laboratorio en `pruebas.minimarket.local`. Las pruebas de caos usan un namespace y una instancia PostgreSQL independientes.
 
-## 1. Requisitos
-Cluster `minimarket` con Calico (`setup-minikube.sh`), chart del MiniMarket desplegado, `kubectl`, `helm`, `istioctl` 1.32, `hey`.
+## Instalación en un laboratorio autorizado
 
-## 2. Instalación
+Verifica el contexto, la versión de Kubernetes y las CRDs antes de aplicar. Las versiones probadas están en el [informe UTP](../docs/validacion-final-utp.md).
 
-**Prometheus + Grafana** (`observability/prometheus-grafana/`):
+1. Instala Istio con un Ingress Gateway `ClusterIP` en `istio-system`. Habilita la inyección en el namespace de las APIs y renueva solo sus Deployments. Aplica `gateway.yaml`, `virtualservice.yaml`, `destinationrule.yaml` y `peerauthentication.yaml` desde [`istio/`](istio/). Usa las [políticas canónicas](../docs/infraestructura/guia-redes-networkpolicies.md).
+2. Instala [Prometheus y Grafana](prometheus-grafana/README.md) y carga el ServiceMonitor, el PodMonitor y el dashboard. La autenticación mTLS de las APIs queda en `PERMISSIVE`, lo que conserva el acceso del frontend y Prometheus sin sidecars.
+3. Instala Chaos Mesh con el runtime y socket del nodo. Para Minikube con containerd usa `chaosDaemon.runtime=containerd`, `chaosDaemon.socketPath=/run/containerd/containerd.sock` y `controllerManager.enableFilterNamespace=true`. Solo el namespace de pruebas lleva la anotación de inyección.
 
-    helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
-    helm install monitoring prometheus-community/kube-prometheus-stack \
-      -n monitoring --create-namespace \
-      -f observability/prometheus-grafana/values.yaml
-    kubectl apply -f observability/prometheus-grafana/servicemonitor.yaml
-    kubectl create configmap minimarket-dashboard -n monitoring \
-      --from-file=minimarket.json=observability/prometheus-grafana/dashboards/minimarket.json
-    kubectl label cm minimarket-dashboard -n monitoring grafana_dashboard=1
+Si existe el Gateway histórico `minimarket-backend/minimarket-gateway`, inspecciona sus propietarios y sus VirtualServices antes de retirarlo por nombre exacto. El Gateway actual está en `istio-system` y admite los hosts declarados de ambos namespaces. La ruta de reportes admite reintentos limitados. Las rutas de ventas desactivan reintentos del gateway.
 
-**Istio** (`observability/istio/`):
+## Ensayo de carga y caos
 
-    istioctl install --set profile=demo -y
-    kubectl label ns minimarket-backend istio-injection=enabled --overwrite
-    kubectl rollout restart deploy -n minimarket-backend
-    kubectl apply -f observability/istio/gateway.yaml \
-      -f observability/istio/virtualservice.yaml \
-      -f observability/istio/destinationrule.yaml
-    kubectl apply -f observability/istio/podmonitor-gateway.yaml
+1. Aplica [`pruebas/namespace.yaml`](pruebas/namespace.yaml) y las [políticas de pruebas](../infra/k8s/network-policies/pruebas/aislamiento.yaml). Crea `backend-db-pruebas-secret` en `minimarket-pruebas` usando el gestor de secretos. Las claves requeridas son `POSTGRES_PASSWORD` y `DATABASE_URL`. Ambas usan la misma contraseña. La URL apunta a `postgres-pruebas.minimarket-pruebas.svc.cluster.local:5432/minimarket_pruebas` con usuario `minimarket_pruebas`.
+2. Aplica [PostgreSQL y el validador](pruebas/postgres-pruebas.yaml). Espera que PostgreSQL esté Ready. Aplica [el Job de migraciones](pruebas/alembic-job-pruebas.yaml) y espera `Complete` antes de aplicar [la API, el Service, el HPA y la ruta](pruebas/ventas-api-pruebas.yaml). El validador rechaza `minimarket_db` y verifica el nombre de la base conectada antes de arrancar.
+3. Abre un port-forward del Gateway. Verifica que `GET /api/v1/productos` retorne 200 con `Host: pruebas.minimarket.local`, que un host desconocido retorne 404 y que los EndpointSlices apunten a pods de `ventas-api-pruebas` Ready. Comprueba el destino del Secret sin mostrar sus valores, confirma que los Services y pods PostgreSQL sean distintos y registra los conteos iniciales de `products`, `sales` y `sale_items` en ambas bases. En la base original usa una sesión de solo lectura.
+4. Empieza con carga moderada de lectura. Para cada experimento, confirma que `spec.selector` exija el namespace `minimarket-pruebas`, `app=ventas-api-pruebas` y `entorno=pruebas`. Crea un recurso cada vez, registra `AllInjected` y los pods afectados, mide la recuperación y retira ese objeto por nombre exacto.
+5. Para medir ventas, crea inventario de prueba y envía solicitudes acotadas con una `Idempotency-Key` única por venta. Ante un timeout, consulta las claves confirmadas en `sale_requests` o repite la misma clave con el mismo cuerpo. Contrasta respuestas, ventas, detalles y descuento de stock. Compara los conteos finales de la base original con los conteos iniciales.
 
-**Chaos Mesh** (`observability/chaos-mesh/`):
+```bash
+kubectl -n istio-system port-forward svc/istio-ingressgateway 18080:80
+hey -n 120 -c 3 -q 5 -t 4 -host pruebas.minimarket.local http://127.0.0.1:18080/api/v1/productos
+kubectl -n minimarket-pruebas get hpa ventas-api-pruebas-hpa -w
+```
 
-    helm repo add chaos-mesh https://charts.chaos-mesh.org
-    helm install chaos-mesh chaos-mesh/chaos-mesh -n chaos-mesh --create-namespace \
-      --set chaosDaemon.runtime=containerd \
-      --set chaosDaemon.socketPath=/run/containerd/containerd.sock
+Los cuatro escenarios están en [`chaos-mesh/`](chaos-mesh/). Los resultados históricos registraron errores 503 y 504. Ocho ventas se confirmaron en PostgreSQL aunque el cliente recibió 504. El [contrato de idempotencia](../docs/contratos-api.md) documenta cómo recuperar una respuesta sin repetir el descuento.
 
-**Protección de PostgreSQL** (ver hallazgo 1, aplicar una vez):
+## Dimensionamiento
 
-    kubectl exec -n minimarket-data deploy/postgres -- psql -U minimarket_user \
-      -d minimarket_db -c "alter database minimarket_db set idle_in_transaction_session_timeout = '30s';"
-
-## 3. Acceso
-
-    kubectl port-forward -n istio-system svc/istio-ingressgateway 8080:80
-    kubectl port-forward -n monitoring svc/monitoring-grafana 3000:80
-
-Grafana en http://localhost:3000, dashboard "MiniMarket". Cada comando va en su propia terminal.
-
-## 4. Pruebas de carga y caos
-
-Carga (5 conexiones, por debajo del pool de BD de 5+5):
-
-    hey -z 120s -c 5 -m POST -T "application/json" \
-      -d '{"items":[{"product_id":1,"quantity":1}]}' \
-      http://localhost:8080/api/v1/ventas
-
-Experimentos (aplicar con la carga en marcha, luego eliminar):
-
-    kubectl apply -f observability/chaos-mesh/pod-kill-ventas.yaml
-    kubectl delete -f observability/chaos-mesh/pod-kill-ventas.yaml
-    kubectl apply -f observability/chaos-mesh/network-delay-ventas.yaml
-    kubectl delete -f observability/chaos-mesh/network-delay-ventas.yaml
-
-## 5. Resultados (2 réplicas iniciales, HPA hasta 5)
-
-| Escenario | 201 | Errores | Req/s | p95 | p99 |
-|---|---|---|---|---|---|
-| Base (sin caos) | 3974 | 0 | 66 | 0.13 s | 0.18 s |
-| Pod-kill | 6803 | 3 x 504 | 57 | 0.19 s | 0.38 s |
-| Retraso de red 100 ms | 3002 | 19 x 503, 8 x 504 | 25 | 1.18 s | 2.55 s |
-
-Pod-kill: Kubernetes repuso el pod y el HPA subió a 5 réplicas; solo fallaron las 3 peticiones en vuelo.
-
-Retraso de red: el 99.1% de las ventas se completó. La ventana del retraso coincidió con el escalado del HPA, así que el resultado es orientativo.
-
-Integridad: en la prueba de red hubo 3010 ventas en BD frente a 3002 respuestas 201; las 8 de diferencia son las 504 (venta registrada, cliente con timeout).
-
-
-## 6. Hallazgos y recomendaciones para el equipo
-
-1. **Transacciones huérfanas.** Un pod-kill en pleno SELECT FOR UPDATE dejó sesiones idle in transaction que retuvieron el bloqueo de la fila del producto. Las demás ventas esperaron con su conexión tomada, el pool (5+5) se agotó, el readiness (/ready, necesita conexión) falló y el gateway respondió 503 UH. Mitigación: idle_in_transaction_session_timeout en PostgreSQL (ver sección 2); debería ir en el init de la BD o en el chart.
-2. **Idempotencia.** Un 504 puede ocultar una venta ya registrada; un reintento duplicaría la venta. Se recomienda una clave de idempotencia en POST /ventas. Por eso el VirtualService solo reintenta en connect-failure y refused-stream.
-3. **Readiness comparte el pool de la app.** Con el pool agotado el pod sale del servicio y la congestión se agrava.
-4. **Arranque.** La versión anterior de ventas-api no reintentaba la conexión a BD si PostgreSQL aún no estaba listo.
-5. **Observabilidad.** La métrica de la app no ve los errores que genera Istio (503 y 504); el dashboard usa istio_requests_total del gateway (PodMonitor).
-6. **NetworkPolicies.** Verificar que no bloqueen el scrape de Prometheus desde monitoring antes de aplicarlas.
-
-## 7. Dimensionamiento físico y TCO
-
-    ./infra/tco/dimensionamiento_tco.sh        # interactivo
-    ./infra/tco/dimensionamiento_tco.sh -y     # valores por defecto
+Ejecuta `./infra/tco/dimensionamiento_tco.sh -y` para comprobar los supuestos predeterminados. El modelo calcula potencia, refrigeración y TCO a tres años para un centro de datos hipotético. Los números son supuestos de dimensionamiento del proyecto.

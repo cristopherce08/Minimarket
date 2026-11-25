@@ -1,6 +1,3 @@
-# ==============================================================================
-# MiniMarket Cloud — NetworkPolicy: Tráfico frontend y bloqueo a PostgreSQL
-# ==============================================================================
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -11,34 +8,31 @@ metadata:
 spec:
   podSelector:
     matchLabels:
-      tier: frontend
-  policyTypes:
-    - Ingress
-    - Egress
+      app: frontend
+  policyTypes: [Ingress, Egress]
   ingress:
-    # Acepta conexiones HTTP en puerto 80 desde el exterior, Ingress o port-forward
     - ports:
-        - protocol: TCP
-          port: 80
+        - {protocol: TCP, port: 80}
   egress:
-    # 1. Conexión hacia APIs del backend (ventas-api y reportes-api)
     - to:
         - namespaceSelector:
             matchLabels:
-              name: minimarket-backend
+              kubernetes.io/metadata.name: minimarket-backend
+          podSelector:
+            matchExpressions:
+              - key: app
+                operator: In
+                values: [ventas-api, reportes-api]
       ports:
-        - protocol: TCP
-          port: 8000
-        - protocol: TCP
-          port: 8001
-    # 2. Resolución de nombres DNS
+        - {protocol: TCP, port: 8000}
+        - {protocol: TCP, port: 8001}
     - to:
-        - namespaceSelector: {}
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
       ports:
-        - protocol: UDP
-          port: 53
-        - protocol: TCP
-          port: 53
-    # NOTA DE SEGURIDAD:
-    # No se incluye regla de salida hacia minimarket-data (puerto 5432).
-    # Cualquier intento de conexión directa desde el frontend a la BD será bloqueado por Calico.
+        - {protocol: UDP, port: 53}
+        - {protocol: TCP, port: 53}

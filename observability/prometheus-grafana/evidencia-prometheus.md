@@ -1,5 +1,7 @@
 # Evidencia de Prometheus y del dashboard
 
+Evidencia histórica del Integrante 4. Los resultados de la configuración integrada están en el [informe de validación final](../../docs/validacion-final-utp.md).
+
 Este documento responde a la corrección del revisor sobre Prometheus: mostrar los targets, las consultas PromQL y que el dashboard tiene datos. Los datos se tomaron el 2026-11-24 con el clúster `minimarket`, usando solo operaciones de lectura. Para que los paneles de tasa tuvieran datos se enviaron 288 peticiones `GET` (mitad `/api/v1/productos`, mitad `/api/v1/reportes/ventas-hoy`) durante unos 40 segundos por el gateway.
 
 ## 1. Targets

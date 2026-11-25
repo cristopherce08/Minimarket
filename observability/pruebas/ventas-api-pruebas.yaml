@@ -5,7 +5,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: ventas-api-pruebas
-  namespace: minimarket-backend
+  namespace: minimarket-pruebas
   labels:
     app: ventas-api-pruebas
     tier: backend
@@ -33,10 +33,14 @@ spec:
             - containerPort: 8000
               name: http
               protocol: TCP
-          envFrom:
-            - configMapRef:
-                name: backend-config
+          command: ["python", "/guard/verificar-db.py", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+          volumeMounts:
+            - name: db-guard
+              mountPath: /guard
+              readOnly: true
           env:
+            - name: DB_CREATE_SCHEMA_ON_STARTUP
+              value: "false"
             # Pool mas chico que el de produccion para no superar max_connections (100) de Postgres
             - name: DB_POOL_SIZE
               value: "3"
@@ -70,12 +74,16 @@ spec:
             periodSeconds: 5
             timeoutSeconds: 3
             failureThreshold: 3
+      volumes:
+        - name: db-guard
+          configMap:
+            name: pruebas-db-guard
 ---
 apiVersion: v1
 kind: Service
 metadata:
   name: ventas-api-pruebas
-  namespace: minimarket-backend
+  namespace: minimarket-pruebas
   labels:
     app: ventas-api-pruebas
     tier: backend
@@ -95,7 +103,7 @@ apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
   name: ventas-api-pruebas-hpa
-  namespace: minimarket-backend
+  namespace: minimarket-pruebas
   labels:
     app: ventas-api-pruebas
     entorno: pruebas
@@ -137,7 +145,7 @@ apiVersion: networking.istio.io/v1
 kind: DestinationRule
 metadata:
   name: ventas-api-pruebas
-  namespace: minimarket-backend
+  namespace: minimarket-pruebas
 spec:
   host: ventas-api-pruebas
   trafficPolicy:
@@ -154,17 +162,17 @@ spec:
       maxEjectionPercent: 50
 ---
 # Ruta de pruebas: solo recibe peticiones con Host: pruebas.minimarket.local
-# Mismos timeouts y reintentos que la ruta real.
+# La ruta de ventas desactiva los reintentos automáticos.
 apiVersion: networking.istio.io/v1
 kind: VirtualService
 metadata:
   name: minimarket-apis-pruebas
-  namespace: minimarket-backend
+  namespace: minimarket-pruebas
 spec:
   hosts:
     - "pruebas.minimarket.local"
   gateways:
-    - minimarket-gateway
+    - istio-system/minimarket-gateway
   http:
     - match:
         - uri:
@@ -176,6 +184,4 @@ spec:
               number: 8000
       timeout: 10s
       retries:
-        attempts: 3
-        perTryTimeout: 3s
-        retryOn: connect-failure,refused-stream
+        attempts: 0

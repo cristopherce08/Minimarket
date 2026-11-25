@@ -1,12 +1,11 @@
 # Crea las tablas en la BD minimarket_pruebas (migraciones Alembic).
-# Usa el label app=alembic-migration para que la NetworkPolicy de Postgres lo deje pasar.
 apiVersion: batch/v1
 kind: Job
 metadata:
   name: alembic-migration-pruebas
-  namespace: minimarket-backend
+  namespace: minimarket-pruebas
   labels:
-    app: alembic-migration
+    app: alembic-migration-pruebas
     tier: backend
     entorno: pruebas
 spec:
@@ -14,22 +13,28 @@ spec:
   template:
     metadata:
       labels:
-        app: alembic-migration
+        app: alembic-migration-pruebas
         tier: backend
         entorno: pruebas
+        sidecar.istio.io/inject: "false"
     spec:
       restartPolicy: OnFailure
       containers:
         - name: alembic-upgrade
           image: minimarket-ventas-api:latest
           imagePullPolicy: IfNotPresent
-          command: ["alembic", "-c", "alembic.ini", "upgrade", "head"]
-          envFrom:
-            - configMapRef:
-                name: backend-config
+          command: ["python", "/guard/verificar-db.py", "alembic", "-c", "alembic.ini", "upgrade", "head"]
+          volumeMounts:
+            - name: db-guard
+              mountPath: /guard
+              readOnly: true
           env:
             - name: DATABASE_URL
               valueFrom:
                 secretKeyRef:
                   name: backend-db-pruebas-secret
                   key: DATABASE_URL
+      volumes:
+        - name: db-guard
+          configMap:
+            name: pruebas-db-guard

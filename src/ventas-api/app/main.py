@@ -2,8 +2,8 @@ import logging
 import time
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
-from typing import List, Optional
-from fastapi import FastAPI, Depends, HTTPException, Query, status
+from typing import Annotated, List, Optional
+from fastapi import FastAPI, Depends, Header, HTTPException, Query, status
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from sqlalchemy import text, func
@@ -37,8 +37,9 @@ logger = logging.getLogger("ventas-api")
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     try:
-        Base.metadata.create_all(bind=engine)
-        logger.info("Esquema de base de datos verificado exitosamente.")
+        if settings.DB_CREATE_SCHEMA_ON_STARTUP:
+            Base.metadata.create_all(bind=engine)
+            logger.info("Esquema de base de datos verificado exitosamente.")
     except Exception as e:
         logger.error(f"Advertencia al conectar con la base de datos en inicio: {e}")
     yield
@@ -262,13 +263,19 @@ def get_low_stock_products(
 # -------------------------------------------------------------
 
 @app.post("/api/v1/ventas", response_model=SaleResponse, status_code=status.HTTP_201_CREATED, tags=["Ventas"])
-def create_sale(sale_in: SaleCreate, db: Session = Depends(get_db)):
+def create_sale(
+    sale_in: SaleCreate,
+    idempotency_key: Annotated[
+        str | None, Header(min_length=1, max_length=128, pattern=r"^[A-Za-z0-9._:-]+$")
+    ] = None,
+    db: Session = Depends(get_db),
+):
     """
     Registra una venta con múltiples productos de forma atómica en PostgreSQL.
     Aplica bloqueo de fila, valida stock, descuenta inventario y congela el precio histórico.
     Si cualquier ítem no tiene stock suficiente, revierte toda la operación (ROLLBACK).
     """
-    sale = process_sale_transaction(db, sale_in)
+    sale = process_sale_transaction(db, sale_in, idempotency_key)
 
     # Construir respuesta
     items_response = []

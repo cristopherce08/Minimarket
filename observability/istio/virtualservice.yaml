@@ -5,9 +5,9 @@ metadata:
   namespace: minimarket-backend
 spec:
   hosts:
-    - "*"
+    - minimarket.local
   gateways:
-    - minimarket-gateway
+    - istio-system/minimarket-gateway
   http:
     - match:
         - uri:
@@ -32,6 +32,4 @@ spec:
               number: 8000
       timeout: 10s
       retries:
-        attempts: 3
-        perTryTimeout: 3s
-        retryOn: connect-failure,refused-stream
+        attempts: 0

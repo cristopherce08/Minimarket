@@ -1,5 +1,10 @@
 alertmanager:
   enabled: false
+grafana:
+  sidecar:
+    datasources:
+      alertmanager:
+        enabled: false
 # En minikube estos componentes del plano de control solo escuchan en 127.0.0.1,
 # por lo que Prometheus no puede leerlos y los targets quedan en DOWN.
 kubeEtcd:
@@ -11,3 +16,8 @@ kubeScheduler:
 prometheus:
   prometheusSpec:
     serviceMonitorSelectorNilUsesHelmValues: false
+    podMonitorSelectorNilUsesHelmValues: false
+    retention: 6h
+    resources:
+      requests: {cpu: 100m, memory: 256Mi}
+      limits: {cpu: "1", memory: 768Mi}

@@ -1,15 +1,21 @@
 from collections import defaultdict
 from decimal import Decimal
+import hashlib
+import json
 from typing import Dict, List
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session
 from sqlalchemy import update
-from .models import Product, Sale, SaleItem
+from sqlalchemy.dialects.postgresql import insert as postgres_insert
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
+from .models import Product, Sale, SaleItem, SaleRequest
 from .schemas import SaleCreate
 from .metrics import SALES_TOTAL, SALES_REVENUE, SALES_FAILED
 
 
-def process_sale_transaction(db: Session, sale_in: SaleCreate) -> Sale:
+def process_sale_transaction(
+    db: Session, sale_in: SaleCreate, idempotency_key: str | None = None
+) -> Sale:
     """
     Ejecuta el registro de venta atómica con transacciones ACID y control de concurrencia.
     Aplica SELECT ... FOR UPDATE sobre PostgreSQL en orden ascendente de IDs para evitar deadlocks,
@@ -38,6 +44,27 @@ def process_sale_transaction(db: Session, sale_in: SaleCreate) -> Sale:
     sorted_product_ids: List[int] = sorted(qty_by_product_id.keys())
 
     try:
+        sale_request = None
+        if idempotency_key is not None:
+            payload = json.dumps(sale_in.model_dump(mode="json"), sort_keys=True)
+            payload_hash = hashlib.sha256(payload.encode()).hexdigest()
+            insert = sqlite_insert if db.get_bind().dialect.name == "sqlite" else postgres_insert
+            claim = (
+                insert(SaleRequest)
+                .values(key=idempotency_key, payload_hash=payload_hash)
+                .on_conflict_do_nothing(index_elements=[SaleRequest.key])
+                .returning(SaleRequest.key)
+            )
+            claimed = db.scalar(claim) is not None
+            sale_request = db.get(SaleRequest, idempotency_key)
+            if not claimed:
+                if sale_request.payload_hash != payload_hash:
+                    raise HTTPException(
+                        status_code=status.HTTP_409_CONFLICT,
+                        detail="La clave de idempotencia ya corresponde a otra solicitud.",
+                    )
+                return sale_request.sale
+
         # 2. Bloqueo pesimista de filas en orden ascendente (en PostgreSQL)
         query = db.query(Product).filter(Product.id.in_(sorted_product_ids))
         if db.bind and db.bind.dialect.name != "sqlite":
@@ -112,6 +139,8 @@ def process_sale_transaction(db: Session, sale_in: SaleCreate) -> Sale:
 
         sale.total = round(total_sale, 2)
         db.add_all(sale_items_to_create)
+        if sale_request is not None:
+            sale_request.sale = sale
         db.commit()
         db.refresh(sale)
 
@@ -124,10 +153,10 @@ def process_sale_transaction(db: Session, sale_in: SaleCreate) -> Sale:
     except HTTPException:
         db.rollback()
         raise
-    except Exception as e:
+    except Exception:
         db.rollback()
         SALES_FAILED.labels(service="ventas-api", reason="error_interno").inc()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Error transaccional al procesar la venta: {str(e)}",
+            detail="Error transaccional al procesar la venta.",
         )

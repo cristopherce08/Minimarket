@@ -185,3 +185,55 @@ def test_high_concurrency_exact_inventory_accounting(client):
     final_p = client.get(f"/api/v1/productos/{prod_id}").json()
     assert final_p["stock"] == 0
 
+
+
+def test_replay_after_lost_response_does_not_deduct_again(client):
+    product = client.post(
+        "/api/v1/productos", json={"name": "Producto único", "price": 2, "stock": 1}
+    ).json()
+    path = "/api/v1/ventas"
+    body = {"items": [{"product_id": product["id"], "quantity": 1}]}
+    headers = {"Idempotency-Key": "lost-response-1"}
+
+    original = client.post(path, json=body, headers=headers)
+    replay = client.post(path, json=body, headers=headers)
+
+    assert original.status_code == replay.status_code == 201
+    assert replay.json() == original.json()
+    assert len(client.get(path).json()) == 1
+    assert client.get(f"/api/v1/productos/{product['id']}").json()["stock"] == 0
+
+
+def test_concurrent_idempotency_and_conflicting_body(client):
+    product = client.post(
+        "/api/v1/productos", json={"name": "Producto concurrente", "price": 2, "stock": 3}
+    ).json()
+    path = "/api/v1/ventas"
+    headers = {"Idempotency-Key": "same-key-two-requests"}
+    body = {"items": [{"product_id": product["id"], "quantity": 1}]}
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        attempts = [pool.submit(client.post, path, json=body, headers=headers) for _ in range(2)]
+        first, second = [attempt.result() for attempt in attempts]
+
+    assert first.status_code == second.status_code == 201
+    assert first.json() == second.json()
+    conflict = client.post(
+        path, json={"items": [{"product_id": product["id"], "quantity": 2}]}, headers=headers
+    )
+    assert conflict.status_code == 409
+    assert len(client.get(path).json()) == 1
+    assert client.get(f"/api/v1/productos/{product['id']}").json()["stock"] == 2
+
+
+def test_rolled_back_sale_releases_idempotency_key(client):
+    product = client.post(
+        "/api/v1/productos", json={"name": "Producto sin stock", "price": 2, "stock": 0}
+    ).json()
+    headers = {"Idempotency-Key": "retry-after-rollback"}
+    body = {"items": [{"product_id": product["id"], "quantity": 1}]}
+
+    assert client.post("/api/v1/ventas", json=body, headers=headers).status_code == 400
+    assert client.put(f"/api/v1/productos/{product['id']}", json={"stock": 1}).status_code == 200
+    assert client.post("/api/v1/ventas", json=body, headers=headers).status_code == 201
+    assert len(client.get("/api/v1/ventas").json()) == 1

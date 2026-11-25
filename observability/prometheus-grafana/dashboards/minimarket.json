@@ -26,7 +26,7 @@
         {
           "refId": "A",
           "legendFormat": "{{namespace}}",
-          "expr": "sum(rate(container_cpu_usage_seconds_total{namespace=~'minimarket-.*',container!=''}[2m])) by (namespace)"
+          "expr": "sum(rate(container_cpu_usage_seconds_total{namespace=~'minimarket-.*',container!=''}[$__rate_interval])) by (namespace)"
         }
       ]
     },
@@ -81,13 +81,13 @@
       "targets": [
         {
           "refId": "A",
-          "legendFormat": "{{exported_endpoint}}",
-          "expr": "sum(rate(minimarket_requests_total[1m])) by (exported_endpoint)"
+          "legendFormat": "{{endpoint}}",
+          "expr": "sum(rate(minimarket_requests_total[$__rate_interval])) by (endpoint)"
         },
         {
           "refId": "B",
-          "legendFormat": "{{exported_endpoint}}",
-          "expr": "sum(rate(minimarket_reportes_requests_total[1m])) by (exported_endpoint)"
+          "legendFormat": "{{endpoint}}",
+          "expr": "sum(rate(minimarket_reportes_requests_total[$__rate_interval])) by (endpoint)"
         }
       ]
     },
@@ -115,7 +115,7 @@
         {
           "refId": "A",
           "legendFormat": "{{response_code}}",
-          "expr": "sum(rate(istio_requests_total{source_workload=\"istio-ingressgateway\",response_code=~\"5..\"}[1m])) by (response_code)"
+          "expr": "sum(rate(istio_requests_total{reporter=\"source\",source_workload=\"istio-ingressgateway\",destination_service_name=~\"ventas-api(-pruebas)?|reportes-api|unknown\",response_code=~\"5..\"}[$__rate_interval])) by (response_code) or vector(0)"
         }
       ]
     },
@@ -143,12 +143,12 @@
         {
           "refId": "A",
           "legendFormat": "{{service}}",
-          "expr": "histogram_quantile(0.95, sum(rate(minimarket_request_duration_seconds_bucket[1m])) by (le, service))"
+          "expr": "histogram_quantile(0.95, sum(rate(minimarket_request_duration_seconds_bucket[$__rate_interval])) by (le, service))"
         },
         {
           "refId": "B",
           "legendFormat": "{{service}}",
-          "expr": "histogram_quantile(0.95, sum(rate(minimarket_reportes_request_duration_seconds_bucket[1m])) by (le, service))"
+          "expr": "histogram_quantile(0.95, sum(rate(minimarket_reportes_request_duration_seconds_bucket[$__rate_interval])) by (le, service))"
         }
       ]
     },
@@ -169,7 +169,8 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(increase(istio_requests_total{source_workload=\"istio-ingressgateway\",response_code=\"201\"}[$__range]))"
+          "expr": "sum(increase(minimarket_sales_total[$__range])) or vector(0)",
+          "legendFormat": ""
         }
       ],
       "fieldConfig": {
@@ -218,7 +219,8 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(increase(minimarket_sales_revenue_soles_total[$__range]))"
+          "expr": "sum(increase(minimarket_sales_revenue_soles_total[$__range])) or vector(0)",
+          "legendFormat": ""
         }
       ]
     },
@@ -239,7 +241,8 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(increase(istio_requests_total{source_workload=\"istio-ingressgateway\",response_code=~\"5..\"}[$__range])) or vector(0)"
+          "expr": "sum(increase(istio_requests_total{reporter=\"source\",source_workload=\"istio-ingressgateway\",destination_service_name=~\"ventas-api(-pruebas)?|reportes-api|unknown\",response_code=~\"5..\"}[$__range])) or vector(0)",
+          "legendFormat": ""
         }
       ],
       "fieldConfig": {
@@ -263,7 +266,7 @@
     {
       "id": 9,
       "type": "timeseries",
-      "title": "Replicas de ventas-api (HPA)",
+      "title": "Réplicas actuales y deseadas (HPA)",
       "gridPos": {
         "x": 0,
         "y": 24,
@@ -283,8 +286,13 @@
       "targets": [
         {
           "refId": "A",
-          "legendFormat": "replicas",
-          "expr": "kube_deployment_status_replicas{namespace=\"minimarket-backend\",deployment=\"ventas-api\"}"
+          "legendFormat": "{{namespace}} / {{horizontalpodautoscaler}} actual",
+          "expr": "kube_horizontalpodautoscaler_status_current_replicas{horizontalpodautoscaler=~\"ventas-api(-pruebas)?-hpa\"}"
+        },
+        {
+          "refId": "B",
+          "legendFormat": "{{namespace}} / {{horizontalpodautoscaler}} deseada",
+          "expr": "kube_horizontalpodautoscaler_status_desired_replicas{horizontalpodautoscaler=~\"ventas-api(-pruebas)?-hpa\"}"
         }
       ]
     },
@@ -312,9 +320,10 @@
         {
           "refId": "A",
           "legendFormat": "{{response_code}}",
-          "expr": "sum(rate(istio_requests_total{source_workload=\"istio-ingressgateway\"}[1m])) by (response_code)"
+          "expr": "sum(rate(istio_requests_total{reporter=\"source\",source_workload=\"istio-ingressgateway\",destination_service_name=~\"ventas-api(-pruebas)?|reportes-api\"}[$__rate_interval])) by (response_code)"
         }
       ]
     }
-  ]
+  ],
+  "version": 1
 }

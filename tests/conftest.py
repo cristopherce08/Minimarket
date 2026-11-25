@@ -295,6 +295,7 @@ def db():
     session = TestingSessionLocal()
 
     try:
+        session.execute(text("DELETE FROM sale_requests;"))
         session.execute(text("DELETE FROM sale_items;"))
         session.execute(text("DELETE FROM sales;"))
         session.execute(text("DELETE FROM products;"))

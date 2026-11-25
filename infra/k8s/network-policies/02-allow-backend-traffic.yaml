@@ -1,6 +1,3 @@
-# ==============================================================================
-# MiniMarket Cloud — NetworkPolicy: Tráfico autorizado en minimarket-backend
-# ==============================================================================
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -10,83 +7,106 @@ metadata:
     app.kubernetes.io/part-of: minimarket-cloud
 spec:
   podSelector:
-    matchLabels:
-      tier: backend
-  policyTypes:
-    - Ingress
-    - Egress
+    matchExpressions:
+      - key: app
+        operator: In
+        values: [ventas-api, reportes-api]
+  policyTypes: [Ingress, Egress]
   ingress:
-    # 1. Tráfico HTTP autorizado exclusivamente desde pods frontend
     - from:
         - namespaceSelector:
             matchLabels:
-              name: minimarket-frontend
+              kubernetes.io/metadata.name: minimarket-frontend
           podSelector:
             matchLabels:
-              tier: frontend
-      ports:
-        - protocol: TCP
-          port: 8000
-        - protocol: TCP
-          port: 8001
-    # 2. Tráfico interno entre servicios backend (e.g. reportes-api a ventas-api)
-    - from:
-        - podSelector:
-            matchLabels:
-              tier: backend
-      ports:
-        - protocol: TCP
-          port: 8000
-        - protocol: TCP
-          port: 8001
-    # 3. Kubelet health checks (liveness/readiness probes originados desde el nodo)
-    - from:
-        - ipBlock:
-            cidr: 192.168.49.0/24
-      ports:
-        - protocol: TCP
-          port: 8000
-        - protocol: TCP
-          port: 8001
-    # 4. Monitoreo y Observabilidad (Prometheus / Istio / Chaos Mesh en namespaces dedicados)
-    - from:
+              app: frontend
         - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: istio-system
+          podSelector:
+            matchLabels:
+              app: istio-ingressgateway
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: monitoring
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: prometheus
+        - podSelector:
             matchExpressions:
-              - key: name
+              - key: app
                 operator: In
-                values: ["observabilidad", "monitoring", "istio-system", "chaos-testing"]
+                values: [ventas-api, reportes-api]
       ports:
-        - protocol: TCP
-          port: 8000
-        - protocol: TCP
-          port: 8001
+        - {protocol: TCP, port: 8000}
+        - {protocol: TCP, port: 8001}
   egress:
-    # 1. Salida hacia PostgreSQL en minimarket-data
     - to:
         - namespaceSelector:
             matchLabels:
-              name: minimarket-data
+              kubernetes.io/metadata.name: minimarket-data
           podSelector:
             matchLabels:
               app: postgres
       ports:
-        - protocol: TCP
-          port: 5432
-    # 2. Tráfico interno entre servicios backend
+        - {protocol: TCP, port: 5432}
     - to:
         - podSelector:
-            matchLabels:
-              tier: backend
+            matchExpressions:
+              - key: app
+                operator: In
+                values: [ventas-api, reportes-api]
       ports:
-        - protocol: TCP
-          port: 8000
-        - protocol: TCP
-          port: 8001
-    # 3. Resolución de nombres DNS (CoreDNS en kube-system)
+        - {protocol: TCP, port: 8000}
+        - {protocol: TCP, port: 8001}
     - to:
-        - namespaceSelector: {}
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
       ports:
-        - protocol: UDP
-          port: 53
-        - protocol: TCP
-          port: 53
+        - {protocol: UDP, port: 53}
+        - {protocol: TCP, port: 53}
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: istio-system
+          podSelector:
+            matchLabels:
+              app: istiod
+      ports:
+        - {protocol: TCP, port: 15012}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: backend-default-deny-ingress
+  namespace: minimarket-backend
+  labels:
+    app.kubernetes.io/part-of: minimarket-cloud
+spec:
+  podSelector: {}
+  policyTypes: [Ingress]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-spark-traffic
+  namespace: minimarket-backend
+  labels:
+    app.kubernetes.io/part-of: minimarket-cloud
+spec:
+  podSelector:
+    matchLabels:
+      app: spark-job
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: spark-job
+      ports:
+        - {protocol: TCP, port: 7078}
+        - {protocol: TCP, port: 7079}

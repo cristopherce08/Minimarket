@@ -2,12 +2,13 @@ apiVersion: chaos-mesh.org/v1alpha1
 kind: PodChaos
 metadata:
   name: pod-kill-ventas
-  namespace: minimarket-backend
+  namespace: minimarket-pruebas
 spec:
   action: pod-kill
   mode: one
   selector:
     namespaces:
-      - minimarket-backend
+      - minimarket-pruebas
     labelSelectors:
       app: ventas-api-pruebas
+      entorno: pruebas

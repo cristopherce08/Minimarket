@@ -36,6 +36,8 @@ spec:
             - configMapRef:
                 name: backend-config
           env:
+            - name: DB_CREATE_SCHEMA_ON_STARTUP
+              value: {{ ternary "false" "true" .Values.migrations.enabled | quote }}
             - name: DATABASE_URL
               valueFrom:
                 secretKeyRef:

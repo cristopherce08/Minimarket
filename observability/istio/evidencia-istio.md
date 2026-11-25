@@ -1,5 +1,7 @@
 # Evidencia de Istio: proxies y estado de mTLS
 
+Evidencia histórica del Integrante 4. Los resultados de la configuración integrada están en el [informe de validación final](../../docs/validacion-final-utp.md).
+
 Este documento responde a la corrección del revisor sobre Istio: mostrar que los proxies están funcionando y aclarar en qué modo está el mTLS. Los datos se tomaron el 2026-11-24 con el clúster `minimarket`, usando solo comandos de lectura (más 20 peticiones `GET` por el gateway para generar tráfico).
 
 ## 1. Estado de los proxies
