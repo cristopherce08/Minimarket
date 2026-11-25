@@ -1,0 +1,40 @@
+# Crea las tablas en la BD minimarket_pruebas (migraciones Alembic).
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: alembic-migration-pruebas
+  namespace: minimarket-pruebas
+  labels:
+    app: alembic-migration-pruebas
+    tier: backend
+    entorno: pruebas
+spec:
+  backoffLimit: 3
+  template:
+    metadata:
+      labels:
+        app: alembic-migration-pruebas
+        tier: backend
+        entorno: pruebas
+        sidecar.istio.io/inject: "false"
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: alembic-upgrade
+          image: minimarket-ventas-api:latest
+          imagePullPolicy: IfNotPresent
+          command: ["python", "/guard/verificar-db.py", "alembic", "-c", "alembic.ini", "upgrade", "head"]
+          volumeMounts:
+            - name: db-guard
+              mountPath: /guard
+              readOnly: true
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: backend-db-pruebas-secret
+                  key: DATABASE_URL
+      volumes:
+        - name: db-guard
+          configMap:
+            name: pruebas-db-guard

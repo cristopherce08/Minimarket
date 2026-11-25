@@ -1,0 +1,44 @@
+{{- if .Values.ventasApi.autoscaling.enabled }}
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ .Values.ventasApi.service.name }}-hpa
+  namespace: {{ .Values.global.namespaces.backend }}
+  labels:
+    app: ventas-api
+    tier: backend
+    app.kubernetes.io/component: api
+    {{- include "minimarket.labels" . | nindent 4 }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ .Values.ventasApi.service.name }}
+  minReplicas: {{ .Values.ventasApi.autoscaling.minReplicas }}
+  maxReplicas: {{ .Values.ventasApi.autoscaling.maxReplicas }}
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.ventasApi.autoscaling.targetCPUUtilizationPercentage }}
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: {{ .Values.ventasApi.autoscaling.behavior.scaleUp.stabilizationWindowSeconds | default 0 }}
+      policies:
+        - type: Percent
+          value: {{ .Values.ventasApi.autoscaling.behavior.scaleUp.percent | default 100 }}
+          periodSeconds: {{ .Values.ventasApi.autoscaling.behavior.scaleUp.periodSeconds | default 15 }}
+        - type: Pods
+          value: {{ .Values.ventasApi.autoscaling.behavior.scaleUp.pods | default 2 }}
+          periodSeconds: {{ .Values.ventasApi.autoscaling.behavior.scaleUp.periodSeconds | default 15 }}
+      selectPolicy: Max
+    scaleDown:
+      stabilizationWindowSeconds: {{ .Values.ventasApi.autoscaling.behavior.scaleDown.stabilizationWindowSeconds | default 60 }}
+      policies:
+        - type: Percent
+          value: {{ .Values.ventasApi.autoscaling.behavior.scaleDown.percent | default 100 }}
+          periodSeconds: {{ .Values.ventasApi.autoscaling.behavior.scaleDown.periodSeconds | default 15 }}
+      selectPolicy: Min
+{{- end }}

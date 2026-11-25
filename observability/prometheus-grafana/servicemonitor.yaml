@@ -1,0 +1,22 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: minimarket-apis
+  namespace: monitoring
+  labels:
+    release: monitoring
+spec:
+  namespaceSelector:
+    matchNames:
+      - minimarket-backend
+      - minimarket-pruebas
+  selector:
+    matchExpressions:
+      - key: app
+        operator: In
+        values: [ventas-api, reportes-api, ventas-api-pruebas]
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 15s
+      honorLabels: true

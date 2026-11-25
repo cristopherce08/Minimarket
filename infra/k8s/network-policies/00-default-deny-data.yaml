@@ -1,0 +1,14 @@
+# ==============================================================================
+# MiniMarket Cloud — NetworkPolicy: Bloqueo por defecto en minimarket-data
+# ==============================================================================
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-all-ingress-data
+  namespace: minimarket-data
+  labels:
+    app.kubernetes.io/part-of: minimarket-cloud
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress

@@ -1,0 +1,18 @@
+apiVersion: chaos-mesh.org/v1alpha1
+kind: NetworkChaos
+metadata:
+  name: network-delay-ventas
+  namespace: minimarket-pruebas
+spec:
+  action: delay
+  mode: all
+  selector:
+    namespaces:
+      - minimarket-pruebas
+    labelSelectors:
+      app: ventas-api-pruebas
+      entorno: pruebas
+  delay:
+    latency: "100ms"
+    jitter: "20ms"
+  duration: "2m"
