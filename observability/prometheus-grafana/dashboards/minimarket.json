@@ -83,6 +83,11 @@
           "refId": "A",
           "legendFormat": "{{exported_endpoint}}",
           "expr": "sum(rate(minimarket_requests_total[1m])) by (exported_endpoint)"
+        },
+        {
+          "refId": "B",
+          "legendFormat": "{{exported_endpoint}}",
+          "expr": "sum(rate(minimarket_reportes_requests_total[1m])) by (exported_endpoint)"
         }
       ]
     },
@@ -139,6 +144,11 @@
           "refId": "A",
           "legendFormat": "{{service}}",
           "expr": "histogram_quantile(0.95, sum(rate(minimarket_request_duration_seconds_bucket[1m])) by (le, service))"
+        },
+        {
+          "refId": "B",
+          "legendFormat": "{{service}}",
+          "expr": "histogram_quantile(0.95, sum(rate(minimarket_reportes_request_duration_seconds_bucket[1m])) by (le, service))"
         }
       ]
     },
