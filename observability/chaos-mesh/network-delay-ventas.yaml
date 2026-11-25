@@ -10,7 +10,7 @@ spec:
     namespaces:
       - minimarket-backend
     labelSelectors:
-      app: ventas-api
+      app: ventas-api-pruebas
   delay:
     latency: "100ms"
     jitter: "20ms"

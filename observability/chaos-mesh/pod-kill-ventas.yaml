@@ -10,4 +10,4 @@ spec:
     namespaces:
       - minimarket-backend
     labelSelectors:
-      app: ventas-api
+      app: ventas-api-pruebas

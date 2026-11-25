@@ -17,7 +17,7 @@ spec:
             matchExpressions:
               - key: app
                 operator: In
-                values: [ventas-api, reportes-api, alembic-migration]
+                values: [ventas-api, ventas-api-pruebas, reportes-api, alembic-migration]
       ports:
         - protocol: TCP
           port: 5432

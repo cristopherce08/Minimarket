@@ -20,7 +20,7 @@ spec:
     matchExpressions:
       - key: app
         operator: In
-        values: [ventas-api, reportes-api]
+        values: [ventas-api, ventas-api-pruebas, reportes-api]
   policyTypes: [Ingress]
   ingress:
     - from:
