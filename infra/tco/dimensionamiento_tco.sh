@@ -21,6 +21,10 @@ W_SRV=$(ask "Consumo promedio por servidor (W)" 350)
 N_SW=$(ask "Numero de switches" 2)
 W_SW=$(ask "Consumo por switch (W)" 120)
 PUE=$(ask "PUE del datacenter (1.4 - 1.6)" 1.5)
+if ! awk "BEGIN{exit !($PUE>=1.4 && $PUE<=1.6)}"; then
+  echo "  PUE fuera del rango 1.4 - 1.6, se usa 1.5" >&2
+  PUE=1.5
+fi
 echo "--- Costos ---"
 TARIFA=$(ask "Tarifa electrica (S/ por kWh)" 0.70)
 P_SRV=$(ask "Precio por servidor (S/)" 15000)
