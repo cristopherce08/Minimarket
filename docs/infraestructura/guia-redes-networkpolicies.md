@@ -1,87 +1,46 @@
-# Guía de Seguridad y Segmentación de Redes (NetworkPolicies con Calico)
+# Políticas de red de MiniMarket
 
-## 1. Fundamento de Seguridad L3/L4
+El conjunto canónico está en [`infra/k8s/network-policies/`](../../infra/k8s/network-policies/). Las políticas de Kubernetes suman permisos. Un `default-deny` deja de ser suficiente si una regla antigua sigue autorizando el mismo tráfico.
 
-Por defecto, en Kubernetes todos los pods pueden comunicarse entre sí sin importar el namespace en el que se encuentren. Para cumplir con el estándar de seguridad de arquitectura Zero-Trust y satisfacer el **Criterio 1 de la rúbrica**, se desplegó el CNI **Calico** y se aplicaron cuatro `NetworkPolicies` declarativas en `infra/k8s/network-policies/`.
+| Flujo | Autorización |
+|---|---|
+| PostgreSQL TCP 5432 | Desde `ventas-api`, `reportes-api`, `spark-job` y `alembic-migration` en `minimarket-backend`. |
+| APIs TCP 8000/8001 | Desde los pods del frontend, las otras APIs del mismo namespace, Istio Ingress Gateway en `istio-system` y Prometheus en `monitoring`. |
+| Envoy | Salida desde las APIs hacia `istiod` TCP 15012 para xDS y certificados. El PodMonitor lee el gateway directamente en TCP 15090. |
+| DNS | TCP/UDP 53 hacia los pods `k8s-app=kube-dns` del namespace `kube-system`. |
+| Spark | TCP 7078/7079 entre pods `app=spark-job`, además de acceso a PostgreSQL y al API Server mediante su ServiceAccount. |
+| Frontend | HTTP de entrada, salida hacia las APIs y DNS. La conexión directa a PostgreSQL queda bloqueada. |
+| Pruebas | El subconjunto [`pruebas/`](../../infra/k8s/network-policies/pruebas/) exige identidad y namespace de pruebas. El único destino PostgreSQL permitido es el pod `postgres-pruebas`. |
 
----
+Los selectores de namespaces usan `kubernetes.io/metadata.name`. Calico permite las sondas del kubelet desde el nodo que aloja el pod. La regla canónica prescinde de excepciones para rangos IP de Minikube. Los trabajos Spark y Alembic se ejecutan sin sidecar.
 
-## 2. Políticas de Red Implementadas
+Prometheus lee `/metrics` por los mismos puertos HTTP de las APIs. NetworkPolicy opera a nivel TCP y autoriza esos puertos al pod de Prometheus. La selección de la ruta `/metrics` la hace ServiceMonitor.
 
-| Archivo | Namespace | Función de Seguridad |
-|---|---|---|
-| [`00-default-deny-data.yaml`](file:///Users/cristopher/Minimarket/infra/k8s/network-policies/00-default-deny-data.yaml) | `minimarket-data` | Bloquea todo tráfico entrante (`DefaultDeny`) a cualquier pod de datos. |
-| [`01-allow-postgres-from-backend.yaml`](file:///Users/cristopher/Minimarket/infra/k8s/network-policies/01-allow-postgres-from-backend.yaml) | `minimarket-data` | Permite conexiones en el puerto `5432/TCP` hacia PostgreSQL **únicamente** desde pods con etiquetas `app: ventas-api`, `app: reportes-api` o `app: spark-job` del namespace `minimarket-backend`. |
-| [`02-allow-backend-traffic.yaml`](file:///Users/cristopher/Minimarket/infra/k8s/network-policies/02-allow-backend-traffic.yaml) | `minimarket-backend` | Permite tráfico HTTP entrante en puertos `8000` y `8001` exclusivamente desde pods con `tier: frontend` de `minimarket-frontend`, tráfico entre pods backend (`tier: backend`), liveness/readiness probes del Kubelet originadas en el nodo (`192.168.49.0/24`), y scraping desde namespaces de observabilidad (`observabilidad`, `monitoring`, `istio-system`, `chaos-testing`). Bloquea todo tráfico no autorizado del resto del clúster. Permite salida a PostgreSQL y DNS. |
-| [`03-allow-frontend-traffic.yaml`](file:///Users/cristopher/Minimarket/infra/k8s/network-policies/03-allow-frontend-traffic.yaml) | `minimarket-frontend` | Permite tráfico HTTP entrante en puerto `80`. Permite salida hacia backend (8000/8001) y DNS. **Prohíbe terminantemente salida hacia el puerto 5432 de datos.** |
+## Actualización de un clúster existente
 
----
+Primero confirma el contexto, el CNI, los labels de cada pod y los namespaces. En un laboratorio que usa otros nombres de namespaces, adapta coherentemente `metadata.namespace` y los selectores de namespace antes de validar.
 
-## 3. Evidencias Reales de Pruebas de Red
-
-Las siguientes pruebas fueron ejecutadas con pods efímeros en el cluster Minikube real para demostrar el aislamiento:
-
-### Prueba 1: Conexión Permitida (Backend -> PostgreSQL:5432)
 ```bash
-kubectl run test-backend-to-pg --rm -i --restart=Never \
-  -n minimarket-backend \
-  --labels="app=ventas-api,tier=backend" \
-  --image=busybox:1.36 -- nc -zv -w 3 postgres.minimarket-data.svc.cluster.local 5432
+kubectl config current-context
+kubectl get namespaces --show-labels
+kubectl get networkpolicy -A
+kubectl apply --dry-run=server -f infra/k8s/network-policies/
+kubectl diff -f infra/k8s/network-policies/
 ```
-**Resultado Real Obtenido:**
-```text
-postgres.minimarket-data.svc.cluster.local (10.102.123.62:5432) open
-pod "test-backend-to-pg" deleted from minimarket-backend namespace
-```
-*Conclusión:* La regla de ingress en `minimarket-data` autoriza el tráfico proveniente del namespace backend.
 
----
+Las políticas `allow-postgres-from-backend`, `allow-backend-traffic`, `allow-frontend-traffic` y `backend-default-deny-ingress` se actualizan con el mismo nombre. Después de aplicar el conjunto canónico en el entorno autorizado, revisa estas políticas heredadas por nombre exacto.
 
-### Prueba 2: Conexión Bloqueada por Calico (Frontend -> PostgreSQL:5432)
+| Namespace | Políticas que pueden haber quedado instaladas |
+|---|---|
+| `minimarket-data` | `postgres-solo-apis` |
+| `minimarket-backend` | `backend-allow-ingressgateway`, `backend-allow-frontend`, `backend-allow-prometheus`, `backend-allow-same-namespace`, `backend-allow-kubelet` |
+
+Para cada candidata, compara su especificación con `git show baad4f2:observability/network-policies/01-postgres-solo-apis.yaml` o `git show baad4f2:observability/network-policies/02-backend-ingress.yaml`. Verifica las anotaciones y el administrador del recurso. Conserva una copia y elimina solo las coincidencias confirmadas como versiones anteriores de MiniMarket.
+
 ```bash
-kubectl run test-frontend-to-pg --rm -i --restart=Never \
-  -n minimarket-frontend \
-  --labels="app=frontend,tier=frontend" \
-  --image=busybox:1.36 -- nc -zv -w 4 postgres.minimarket-data.svc.cluster.local 5432
+kubectl -n NAMESPACE get networkpolicy NOMBRE -o yaml
+kubectl -n NAMESPACE delete networkpolicy NOMBRE --dry-run=server
+kubectl -n NAMESPACE delete networkpolicy NOMBRE
 ```
-**Resultado Real Obtenido:**
-```text
-nc: postgres.minimarket-data.svc.cluster.local (10.102.123.62:5432): Connection timed out
-pod "test-frontend-to-pg" deleted from minimarket-frontend namespace
-pod minimarket-frontend/test-frontend-to-pg terminated (Error)
-```
-*Conclusión:* Calico descartó los paquetes TCP dirigidos al puerto 5432 procedentes del frontend. Se confirma el aislamiento absoluto de la capa de datos frente a la capa de presentación.
 
----
-
-### Prueba 3: Conexión Permitida (Frontend -> Backend API:8000)
-```bash
-kubectl run test-frontend-to-backend --rm -i --restart=Never \
-  -n minimarket-frontend \
-  --labels="app=frontend,tier=frontend" \
-  --image=curlimages/curl:8.10.1 -- curl -s http://ventas-api.minimarket-backend.svc.cluster.local:8000/health
-```
-**Resultado Real Obtenido:**
-```json
-{
-  "status": "healthy",
-  "service": "ventas-api",
-  "timestamp": "2026-11-10T18:05:40.594280Z"
-}
-```
-*Conclusión:* La comunicación legítima entre capas requerida por la aplicación opera sin contratiempos.
-
----
-
-### Prueba 4: Conexión Bloqueada desde Pod no Autorizado en Namespace `default` (Prueba Negativa)
-```bash
-kubectl run rogue-test-pod --namespace default --image=busybox:1.36 --restart=Never \
-  --command -- sh -c "wget -T 3 -qO- http://ventas-api.minimarket-backend.svc.cluster.local:8000/health && echo 'FALLO_SEGURIDAD' || echo 'BLOQUEADO_CORRECTAMENTE'"
-```
-**Resultado Real Obtenido:**
-```text
-wget: download timed out
-BLOQUEADO_CORRECTAMENTE
-pod "rogue-test-pod" deleted from default namespace
-```
-*Conclusión:* Un pod cualquiera en el clúster sin las etiquetas o namespaces autorizados no puede acceder a las APIs de backend en los puertos 8000 o 8001. La política `allow-backend-traffic` cierra eficazmente la brecha de puertos abiertos.
+Abre conexiones nuevas para verificar que frontend y pods sin rol queden bloqueados hacia PostgreSQL. Comprueba también frontend → API, API → PostgreSQL, DNS, sondas, gateway y scraping antes de dar por terminada la actualización. En una API con sidecar, un SYN aceptado por Envoy no acredita que el PostgreSQL remoto respondió. Usa una conexión de aplicación o una respuesta del protocolo PostgreSQL.

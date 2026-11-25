@@ -171,6 +171,7 @@ Prefijo base: `/api/v1`
 ### 2.3. Endpoints del Módulo de Ventas
 
 #### `POST /api/v1/ventas`
+- **`Idempotency-Key` opcional:** conserva la misma clave y el mismo cuerpo al reintentar después de un timeout. Acepta de 1 a 128 caracteres ASCII alfanuméricos o `._:-`. La misma combinación devuelve el mismo ID y detalle con `201`, incluso tras una solicitud concurrente. La misma clave con otro cuerpo devuelve `409`. Las operaciones revertidas liberan la clave. Los clientes que omiten la cabecera crean una venta por cada solicitud aceptada.
 - **Descripción:** Registro atómico de venta multi-producto. Bloquea filas en PostgreSQL con `with_for_update()`, valida stock disponible de todos los ítems, descuenta el inventario y genera la venta con su detalle. Si falla cualquier producto por stock insuficiente, se cancela toda la venta mediante `ROLLBACK`.
 - **Payload (`application/json`):**
 ```json

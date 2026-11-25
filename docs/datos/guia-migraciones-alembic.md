@@ -11,6 +11,8 @@ Las migraciones residen en [`src/ventas-api/alembic/versions/`](file:///Users/cr
    - Añade las tablas de analítica: `agg_ventas_diarias`, `agg_productos_top`, `agg_resumen_general`.
    - Downgrade idempotente implementado con `DROP TABLE IF EXISTS ... CASCADE`.
 
+3. [`003_sale_requests.py`](../../src/ventas-api/alembic/versions/003_sale_requests.py) registra las claves de idempotencia y vincula cada una con su venta confirmada.
+
 ---
 
 ## 2. Automatización en Kubernetes mediante Helm Hooks
@@ -52,3 +54,7 @@ alembic -c src/ventas-api/alembic.ini upgrade head
 ```bash
 alembic -c src/ventas-api/alembic.ini downgrade -1
 ```
+
+## Bases existentes sin historial Alembic
+
+Si existen las tablas transaccionales y falta `alembic_version`, audita el esquema y verifica un respaldo restaurable antes de adoptar Alembic. Revisa que las tres tablas, índices, claves foráneas y restricciones correspondan a la revisión `001_initial_schema`. Si el esquema cumple y las tablas de `002` aún no existen, ensaya en una copia `alembic stamp 001_initial_schema` y después `alembic upgrade head`. Comprueba conteos y existencias antes y después. Una base vacía empieza con `alembic upgrade head`.
